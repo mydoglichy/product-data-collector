@@ -1,0 +1,8 @@
+.env
+.idea/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+coupang_API/data/

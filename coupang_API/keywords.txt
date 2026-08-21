@@ -1,0 +1,4 @@
+# One keyword per line. Blank lines and comments are ignored.
+선글라스 케이스
+휴대용 안경집
+가죽 안경 파우치
