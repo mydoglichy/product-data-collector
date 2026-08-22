@@ -1,0 +1,19 @@
+discovery:
+  markets:
+    - dome
+    - supply
+  sorts:
+    popular: ha
+    recent: da
+  items_per_keyword: 20
+
+details:
+  batch_size: 100
+
+request:
+  max_requests_per_minute: 120
+  timeout_seconds: 20
+  max_retries: 3
+
+timezone: Asia/Seoul
+
