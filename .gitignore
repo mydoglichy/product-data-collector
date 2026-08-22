@@ -6,3 +6,6 @@ __pycache__/
 .venv/
 venv/
 coupang_API/data/
+domeggook_API/tracked_products.json
+domeggook_API/output/
+domeggook_API/logs/
