@@ -25,6 +25,7 @@ class DiscoveryConfig:
 @dataclass(frozen=True)
 class DetailsConfig:
     batch_size: int
+    raw_sample_limit: int
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,10 @@ def load_config(path: Path) -> DomeggookConfig:
     if not 1 <= batch_size <= OFFICIAL_DETAIL_MAX_BATCH_SIZE:
         raise ValueError(f"details.batch_size must be between 1 and {OFFICIAL_DETAIL_MAX_BATCH_SIZE}")
 
+    raw_sample_limit = int(details.get("raw_sample_limit", 20))
+    if raw_sample_limit < 0:
+        raise ValueError("details.raw_sample_limit must be zero or greater")
+
     max_requests = int(request.get("max_requests_per_minute", DEFAULT_REQUESTS_PER_MINUTE))
     if not 1 <= max_requests < OFFICIAL_RATE_LIMIT_PER_MINUTE:
         raise ValueError(
@@ -92,7 +97,7 @@ def load_config(path: Path) -> DomeggookConfig:
 
     return DomeggookConfig(
         discovery=DiscoveryConfig(markets=markets, sorts=sorts, items_per_keyword=items_per_keyword),
-        details=DetailsConfig(batch_size=batch_size),
+        details=DetailsConfig(batch_size=batch_size, raw_sample_limit=raw_sample_limit),
         request=RequestConfig(max_requests_per_minute=max_requests, timeout_seconds=timeout, max_retries=max_retries),
         timezone=str(payload.get("timezone") or "Asia/Seoul"),
     )

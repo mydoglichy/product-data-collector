@@ -56,7 +56,7 @@ def test_collect_details_batches_and_writes_snapshot_without_real_api(tmp_path):
 def _config():
     return DomeggookConfig(
         discovery=DiscoveryConfig(markets=("dome", "supply"), sorts={"popular": "ha", "recent": "da"}, items_per_keyword=20),
-        details=DetailsConfig(batch_size=100),
+        details=DetailsConfig(batch_size=100, raw_sample_limit=20),
         request=RequestConfig(max_requests_per_minute=120, timeout_seconds=20, max_retries=3),
         timezone="Asia/Seoul",
     )

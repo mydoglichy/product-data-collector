@@ -113,7 +113,10 @@ class DomeggookClient:
             if response.status_code >= 400:
                 raise DomeggookHttpError(response.status_code, _safe_response_message(response))
 
-            payload = response.json()
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                raise DomeggookApiError(f"invalid JSON response: HTTP {response.status_code}") from exc
             _raise_for_api_error(payload)
             return payload
 

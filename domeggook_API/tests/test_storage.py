@@ -1,6 +1,11 @@
 import json
+import os
+import time
+
+import pytest
 
 from domeggook_API.storage import (
+    FileLock,
     active_product_ids,
     atomic_write_json,
     chunked,
@@ -98,3 +103,25 @@ def test_product_snapshots_merge_by_product_id(tmp_path):
     assert payload["products"][0]["price"] == "900"
     assert json.loads(path.read_text(encoding="utf-8")) == payload
 
+
+def test_file_lock_rejects_recent_existing_lock(tmp_path):
+    path = tmp_path / "collector.lock"
+    path.write_text("12345", encoding="ascii")
+
+    with pytest.raises(RuntimeError, match="another domeggook_API collection"):
+        with FileLock(path, stale_after_seconds=60):
+            pass
+
+    assert path.exists()
+
+
+def test_file_lock_removes_stale_existing_lock(tmp_path):
+    path = tmp_path / "collector.lock"
+    path.write_text("12345", encoding="ascii")
+    old_time = time.time() - 120
+    os.utime(path, (old_time, old_time))
+
+    with FileLock(path, stale_after_seconds=60):
+        assert path.exists()
+
+    assert not path.exists()

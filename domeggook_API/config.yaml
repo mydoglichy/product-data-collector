@@ -9,6 +9,7 @@ discovery:
 
 details:
   batch_size: 100
+  raw_sample_limit: 20
 
 request:
   max_requests_per_minute: 120
