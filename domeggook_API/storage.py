@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 
 class FileLock:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, stale_after_seconds: float = 12 * 60 * 60) -> None:
         self.path = path
+        self.stale_after_seconds = stale_after_seconds
         self._fd: int | None = None
 
     def __enter__(self) -> "FileLock":
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._remove_stale_lock()
         try:
             self._fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError as exc:
@@ -29,6 +32,19 @@ class FileLock:
             self.path.unlink()
         except FileNotFoundError:
             pass
+
+    def _remove_stale_lock(self) -> None:
+        if self.stale_after_seconds <= 0 or not self.path.exists():
+            return
+        try:
+            age_seconds = time.time() - self.path.stat().st_mtime
+        except FileNotFoundError:
+            return
+        if age_seconds > self.stale_after_seconds:
+            try:
+                self.path.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def load_tracked_products(path: Path) -> dict[str, dict[str, Any]]:

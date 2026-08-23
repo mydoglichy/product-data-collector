@@ -120,3 +120,47 @@ def test_detail_item_level_error_does_not_drop_batch():
 
     assert [product["productId"] for product in products] == ["1"]
     assert failures == [{"productId": "2", "error": "not found", "code": "404"}]
+
+
+def test_detail_parser_keeps_zero_false_and_known_raw_aliases():
+    payload = {
+        "domeggook": {
+            "item": [
+                {
+                    "no": "12345678",
+                    "price": {"dome": 0, "supply": 0},
+                    "qty": {"inventory": 0},
+                    "deli": {
+                        "dome": {"tbl": "150+3000|150+3000", "type": "quantity"},
+                        "supply": {"tbl": "150+2500|150+2500", "type": "quantity"},
+                    },
+                    "channel": {"dome": False, "supply": False},
+                    "seller": {"score": {"avg": "96%", "cnt": 122}},
+                }
+            ]
+        }
+    }
+
+    products, failures = parse_detail_products(payload, "2026-08-22T09:00:00+09:00")
+
+    assert failures == []
+    product = products[0]
+    assert product["prices"]["domeCurrentSupplyPrice"] == 0
+    assert product["prices"]["supplyCurrentSupplyPrice"] == 0
+    assert product["inventory"]["stockQuantity"] == 0
+    assert product["shipping"]["domeFee"] == "150+3000|150+3000"
+    assert product["shipping"]["supplyFee"] == "150+2500|150+2500"
+    assert product["markets"]["domeOnSale"] is False
+    assert product["markets"]["supplyOnSale"] is False
+    assert product["seller"]["averageSatisfaction"] == "96%"
+    assert product["seller"]["reviewCount"] == 122
+
+
+def test_detail_parser_limits_raw_records():
+    payload = {"domeggook": {"item": [{"no": "1"}, {"no": "2"}]}}
+
+    products, failures = parse_detail_products(payload, "2026-08-22T09:00:00+09:00", raw_limit=1)
+
+    assert failures == []
+    assert "raw" in products[0]
+    assert "raw" not in products[1]

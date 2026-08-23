@@ -260,6 +260,7 @@ discovery:
 
 details:
   batch_size: 100
+  raw_sample_limit: 20
 
 request:
   max_requests_per_minute: 120
@@ -273,6 +274,7 @@ timezone: Asia/Seoul
 
 - `items_per_keyword`는 공식 최대값 100 이하
 - `details.batch_size`는 공식 최대값 100 이하
+- `details.raw_sample_limit`는 0 이상이어야 하며, 상세 snapshot에서 원본 API 응답 `raw`를 보관할 상품 수입니다.
 - `max_requests_per_minute`는 공식 제한 180회/분보다 낮아야 함
 - 기본 timezone은 `Asia/Seoul`
 
@@ -283,6 +285,7 @@ timezone: Asia/Seoul
 - `Retry-After`가 없으면 exponential backoff로 재시도합니다.
 - 5xx와 네트워크 오류도 제한 횟수만 재시도합니다.
 - 잘못된 상품 하나 때문에 전체 배치가 중단되지 않도록 실패 건은 `failures`에 따로 남깁니다.
+- `collector.lock`이 12시간 이상 남아 있으면 비정상 종료로 판단하고 다음 실행 때 자동 정리합니다.
 - API Key는 로그에 남기지 않습니다.
 - `tracked_products.json`과 output JSON은 임시 파일에 먼저 쓴 뒤 원자적으로 교체합니다.
 - `collector.lock`으로 동일 작업의 동시 실행을 막습니다.

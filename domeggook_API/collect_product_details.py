@@ -42,13 +42,15 @@ def collect_details(
     collected_at = now_iso(config.timezone)
     products: list[dict[str, object]] = []
     failures: list[dict[str, object]] = []
+    raw_remaining = config.details.raw_sample_limit
 
     for batch in chunked(product_ids, config.details.batch_size):
         try:
             payload = client.get_item_view(batch)
-            parsed_products, parsed_failures = parse_detail_products(payload, collected_at)
+            parsed_products, parsed_failures = parse_detail_products(payload, collected_at, raw_limit=raw_remaining)
             products.extend(parsed_products)
             failures.extend(parsed_failures)
+            raw_remaining = max(raw_remaining - len(parsed_products), 0)
         except DomeggookApiError as exc:
             LOGGER.error("failed detail batch product_ids=%s error=%s", ",".join(batch), exc)
             failures.extend({"productId": product_id, "error": str(exc)} for product_id in batch)
