@@ -1,0 +1,29 @@
+environment: production
+
+discovery:
+  keyword_file: ownerclan_API/keywords.txt
+  top_limit_per_keyword: 10
+  new_limit_per_keyword: 10
+
+details:
+  batch_size: 100
+
+incremental:
+  page_size: 1000
+  overlap_minutes: 120
+  include_item_histories: false
+
+request:
+  interval_seconds: 1.0
+  timeout_seconds: 20
+  max_retries: 3
+  retry_after_max_seconds: 60
+
+output:
+  tracked_products_path: ownerclan_API/tracked_products.json
+  output_dir: ownerclan_API/output
+  state_dir: ownerclan_API/state
+  log_dir: ownerclan_API/logs
+  raw_retention_per_product: 3
+
+timezone: Asia/Seoul

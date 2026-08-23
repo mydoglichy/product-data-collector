@@ -9,3 +9,7 @@ coupang_API/data/
 domeggook_API/tracked_products.json
 domeggook_API/output/
 domeggook_API/logs/
+ownerclan_API/tracked_products.json
+ownerclan_API/output/
+ownerclan_API/logs/
+ownerclan_API/state/

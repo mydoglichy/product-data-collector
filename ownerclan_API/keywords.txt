@@ -1,0 +1,4 @@
+# One keyword per line. Blank lines and comments are ignored.
+안경 케이스
+휴대폰 케이스
+
