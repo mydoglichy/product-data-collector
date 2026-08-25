@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import re
 from typing import Any
+
+
+_NUMERIC_TEXT_RE = re.compile(r"^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$")
 
 
 def parse_list_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -80,29 +84,29 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
         "saleStartedAt": _coalesce(_get(basis, "dateStart"), _get(item, "startDate", "saleStartDate", "saleStartedAt")),
         "saleEndedAt": _coalesce(_get(basis, "dateEnd"), _get(item, "endDate", "saleEndDate", "saleEndedAt")),
         "prices": {
-            "domeCurrentSupplyPrice": _coalesce(_get(price, "dome"), _get(dome, "price", "salePrice", "supplyPrice")),
-            "domeOriginalSupplyPrice": _get(dome, "orgPrice", "originalPrice", "beforeDiscountPrice"),
-            "supplyCurrentSupplyPrice": _coalesce(_get(price, "supply"), _get(supply, "price", "salePrice", "supplyPrice")),
-            "supplyOriginalSupplyPrice": _get(supply, "orgPrice", "originalPrice", "beforeDiscountPrice"),
-            "minimumRetailPrice": _coalesce(_get(price_labeled, "low", "minimum"), _get(item, "minPrice", "minimumRetailPrice", "lowPrice")),
-            "recommendedRetailPrice": _coalesce(_get(price_labeled, "recommend", "recommended"), _get(item, "recommendPrice", "recommendedRetailPrice", "recPrice")),
+            "domeCurrentSupplyPrice": _number(_coalesce(_get(price, "dome"), _get(dome, "price", "salePrice", "supplyPrice"))),
+            "domeOriginalSupplyPrice": _number(_get(dome, "orgPrice", "originalPrice", "beforeDiscountPrice")),
+            "supplyCurrentSupplyPrice": _number(_coalesce(_get(price, "supply"), _get(supply, "price", "salePrice", "supplyPrice"))),
+            "supplyOriginalSupplyPrice": _number(_get(supply, "orgPrice", "originalPrice", "beforeDiscountPrice")),
+            "minimumRetailPrice": _number(_coalesce(_get(price_labeled, "low", "minimum"), _get(item, "minPrice", "minimumRetailPrice", "lowPrice"))),
+            "recommendedRetailPrice": _number(_coalesce(_get(price_labeled, "recommend", "recommended"), _get(item, "recommendPrice", "recommendedRetailPrice", "recPrice"))),
         },
         "inventory": {
-            "stockQuantity": _coalesce(_get(qty, "inventory"), _get(item, "stock", "stockQty", "quantity")),
-            "domeMoq": _coalesce(_get(qty, "domeMoq"), _get(dome, "minOrderQty", "moq", "minimumOrderQuantity")),
-            "domeMaxOrderQuantity": _get(dome, "maxOrderQty", "maximumOrderQuantity"),
-            "domeOrderUnit": _coalesce(_get(qty, "domeUnit"), _get(dome, "orderUnit", "unitQty", "unit")),
-            "supplyOrderUnit": _coalesce(_get(qty, "supplyUnit"), _get(supply, "orderUnit", "unitQty", "unit")),
+            "stockQuantity": _number(_coalesce(_get(qty, "inventory"), _get(item, "stock", "stockQty", "quantity"))),
+            "domeMoq": _number(_coalesce(_get(qty, "domeMoq"), _get(dome, "minOrderQty", "moq", "minimumOrderQuantity"))),
+            "domeMaxOrderQuantity": _number(_get(dome, "maxOrderQty", "maximumOrderQuantity")),
+            "domeOrderUnit": _number(_coalesce(_get(qty, "domeUnit"), _get(dome, "orderUnit", "unitQty", "unit"))),
+            "supplyOrderUnit": _number(_coalesce(_get(qty, "supplyUnit"), _get(supply, "orderUnit", "unitQty", "unit"))),
         },
         "shipping": {
             "method": _get(delivery, "method", "deliveryMethod", "shipMethod"),
             "feePayer": _get(delivery, "pay", "feePayer", "deliveryChargeType", "shipFeeType"),
-            "domeFee": _coalesce(_get(deli_dome, "fee", "tbl"), _get(dome, "deliveryFee", "shipFee")),
+            "domeFee": _number(_coalesce(_get(deli_dome, "fee", "tbl"), _get(dome, "deliveryFee", "shipFee"))),
             "domeFeeType": _coalesce(_get(deli_dome, "type"), _get(dome, "deliveryFeeType", "shipFeeType")),
-            "supplyFee": _coalesce(_get(deli_supply, "fee", "tbl"), _get(supply, "deliveryFee", "shipFee")),
+            "supplyFee": _number(_coalesce(_get(deli_supply, "fee", "tbl"), _get(supply, "deliveryFee", "shipFee"))),
             "supplyFeeType": _coalesce(_get(deli_supply, "type"), _get(supply, "deliveryFeeType", "shipFeeType")),
-            "preparationPeriod": _get(delivery, "wating", "preparationPeriod", "preparationDays", "readyDays"),
-            "averageShippingDays": _get(delivery, "sendAvg", "averageShippingDays", "avgDeliveryDays", "avgShipDays"),
+            "preparationPeriod": _number(_get(delivery, "wating", "preparationPeriod", "preparationDays", "readyDays")),
+            "averageShippingDays": _number(_get(delivery, "sendAvg", "averageShippingDays", "avgDeliveryDays", "avgShipDays")),
             "fastShipping": _get(delivery, "fastDeli", "fastShipping", "quickDelivery", "isFastShipping"),
             "overseasDirectShipping": _get(delivery, "fromOversea", "overseasDirectShipping", "overseaDelivery", "isOverseasDirect"),
         },
@@ -120,10 +124,10 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
                 _get(_first_dict(seller, ("score",)), "average", "avg"),
                 _get(seller, "averageSatisfaction", "avgSatisfaction", "satisfaction"),
             ),
-            "reviewCount": _coalesce(
+            "reviewCount": _number(_coalesce(
                 _get(_first_dict(seller, ("score",)), "count", "cnt"),
                 _get(seller, "reviewCount", "feedbackCount", "opinionCount"),
-            ),
+            )),
         },
         "category": {
             "code": _get(category_current, "code") or _get(category, "code", "categoryCode", "cateCode"),
@@ -188,6 +192,20 @@ def _coalesce(*values: Any) -> Any:
         if value is not None:
             return value
     return None
+
+
+def _number(value: Any) -> int | float | Any:
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (int, float)):
+        return value
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not _NUMERIC_TEXT_RE.fullmatch(text):
+        return value
+    normalized = text.replace(",", "")
+    return float(normalized) if "." in normalized else int(normalized)
 
 
 def _as_list(value: Any) -> list[Any]:
