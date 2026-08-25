@@ -19,6 +19,7 @@ from .storage import (
     merge_discovered_product,
     merge_product_snapshots,
     save_failures,
+    save_raw_samples,
     save_state,
     save_tracked_products,
     load_tracked_products,
@@ -130,18 +131,23 @@ def sync_incremental(
         output_dir = config.output.output_dir
         data_dir = output_dir.parent
         file_stamp = output_file_stamp("ownerclan", config.timezone)
+        save_raw_samples(
+            data_dir / "raw" / f"{file_stamp}_raw.json",
+            collected_at,
+            products,
+            config.output.raw_sample_limit,
+        )
         merge_product_snapshots(
             output_dir / f"{file_stamp}_product-snapshots.json",
             collected_at,
-            products,
+            (_without_raw(product) for product in products),
             failures,
         )
         update_latest_and_history(
             latest_path=config.output.state_dir / "latest-products.json",
             history_path=data_dir / "history" / f"{file_stamp}_product-history.json",
             collected_at=collected_at,
-            products=products,
-            raw_retention_per_product=config.output.raw_retention_per_product,
+            products=(_without_raw(product) for product in products),
         )
         if histories:
             save_state(data_dir / "history" / f"{file_stamp}_item-histories.json", {"collectedAt": collected_at, "histories": histories})
@@ -158,6 +164,12 @@ def sync_incremental(
         "failureCount": len(failures),
         "stateUpdated": 1 if completed and not failures and not dry_run else 0,
     }
+
+
+def _without_raw(product: dict[str, Any]) -> dict[str, Any]:
+    result = dict(product)
+    result.pop("raw", None)
+    return result
 
 
 def fetch_item_histories(client: Any, config: OwnerclanConfig, date_from: int, date_to: int) -> list[dict[str, Any]]:

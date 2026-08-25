@@ -90,7 +90,15 @@ def test_collect_details_writes_latest_history_and_failures(tmp_path):
 
     assert result["successCount"] == 2
     latest = load_json_object(config.output.state_dir / "latest-products.json")
-    assert latest["W1"]["rawSnapshots"]
+    assert "rawSnapshots" not in latest["W1"]
+    snapshot_files = list(config.output.output_dir.glob("ownerclan_*_product-snapshots.json"))
+    assert snapshot_files
+    snapshot = load_json_object(snapshot_files[0])
+    assert "raw" not in snapshot["products"][0]
+    raw_files = list((config.output.output_dir.parent / "raw").glob("ownerclan_*_raw.json"))
+    assert raw_files
+    raw_payload = load_json_object(raw_files[0])
+    assert raw_payload["items"]
     history_files = list((config.output.output_dir.parent / "history").glob("ownerclan_*_product-history.json"))
     assert history_files
 
@@ -206,7 +214,7 @@ def test_repeated_category_specific_placeholders_are_compacted_in_source_specifi
     assert product["raw"]["images"] == ["https://example.com/a.jpg"]
 
 
-def test_raw_retention_per_product_limit(tmp_path):
+def test_latest_products_do_not_store_raw_snapshots(tmp_path):
     latest_path = tmp_path / "latest.json"
     history_path = tmp_path / "history.json"
     for index in range(5):
@@ -216,11 +224,11 @@ def test_raw_retention_per_product_limit(tmp_path):
             history_path=history_path,
             collected_at=product["collectedAt"],
             products=[product],
-            raw_retention_per_product=3,
         )
 
     latest = load_json_object(latest_path)
-    assert len(latest["W1"]["rawSnapshots"]) == 3
+    assert "rawSnapshots" not in latest["W1"]
+    assert "raw" not in latest["W1"]
     assert len(latest["W1"]["fingerprint"]) == 64
     assert "content" not in latest["W1"]["fingerprint"]
 

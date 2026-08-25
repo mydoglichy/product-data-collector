@@ -60,8 +60,8 @@ domeggook_2026_0825_1810_search-ranks.json
 | API | 기준 데이터 | raw 보관 방식 |
 | --- | --- | --- |
 | 쿠팡 | `coupang_API/data/processed/coupang_YYYY_MMDD_HHMM_products.jsonl` | `output.raw_sample_limit` 개수만 별도 raw 파일 저장 |
-| 오너클랜 | `ownerclan_API/data/processed/ownerclan_YYYY_MMDD_HHMM_product-snapshots.json` | 상품별 `rawSnapshots[]` 최근 N개 |
-| 도매꾹/도매매 | `domeggook_API/data/processed/domeggook_YYYY_MMDD_HHMM_product-snapshots.json` | snapshot 안에 `details.raw_sample_limit` 개수만 raw 포함 |
+| 오너클랜 | `ownerclan_API/data/processed/ownerclan_YYYY_MMDD_HHMM_product-snapshots.json` | `data/raw/ownerclan_YYYY_MMDD_HHMM_raw.json`에 샘플 저장 |
+| 도매꾹/도매매 | `domeggook_API/data/processed/domeggook_YYYY_MMDD_HHMM_product-snapshots.json` | `data/raw/domeggook_YYYY_MMDD_HHMM_raw.json`에 샘플 저장 |
 
 각 수집기의 상세 파일 구조는 개별 README와 DATA_SCHEMA를 봅니다.
 

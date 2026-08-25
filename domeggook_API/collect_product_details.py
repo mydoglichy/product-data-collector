@@ -10,7 +10,7 @@ from .config import DomeggookConfig, find_project_root, load_api_key, load_confi
 from .logging_config import configure_logging
 from .parsing import parse_detail_products
 from .rate_limiter import RateLimiter
-from .storage import active_product_ids, chunked, load_tracked_products, merge_product_snapshots
+from .storage import active_product_ids, chunked, load_tracked_products, merge_product_snapshots, save_raw_samples
 from .time_utils import now_iso, output_file_stamp
 
 
@@ -66,10 +66,17 @@ def collect_details(
             unique_products[str(product_id)] = product
 
     if not dry_run:
-        merge_product_snapshots(
-            data_dir / "processed" / f"{output_file_stamp('domeggook', config.timezone)}_product-snapshots.json",
+        file_stamp = output_file_stamp("domeggook", config.timezone)
+        save_raw_samples(
+            data_dir / "raw" / f"{file_stamp}_raw.json",
             collected_at,
             unique_products.values(),
+            config.details.raw_sample_limit,
+        )
+        merge_product_snapshots(
+            data_dir / "processed" / f"{file_stamp}_product-snapshots.json",
+            collected_at,
+            (_without_raw(product) for product in unique_products.values()),
             failures,
         )
 
@@ -78,6 +85,12 @@ def collect_details(
         "successCount": len(unique_products),
         "failureCount": len(failures),
     }
+
+
+def _without_raw(product: dict[str, object]) -> dict[str, object]:
+    result = dict(product)
+    result.pop("raw", None)
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -20,6 +20,7 @@
 | 추적 상품 마스터 | `domeggook_API/data/state/tracked_products.json` |
 | 상품 상세 snapshot | `domeggook_API/data/processed/domeggook_YYYY_MMDD_HHMM_product-snapshots.json` |
 | 검색 순위 이력 | `domeggook_API/data/processed/domeggook_YYYY_MMDD_HHMM_search-ranks.json` |
+| raw 원본 샘플 | `domeggook_API/data/raw/domeggook_YYYY_MMDD_HHMM_raw.json` |
 | 실행 로그 | `domeggook_API/data/logs/collector.log` |
 
 `data/`는 런타임 파일이라 Git에 올리지 않습니다.
@@ -56,7 +57,7 @@ details:
 
 - `discovery.items_per_keyword`: 키워드/마켓/정렬별 검색 상품 수
 - `details.batch_size`: 상세 조회 batch 크기
-- `details.raw_sample_limit`: snapshot 안에 raw 원본 응답을 포함할 상품 수
+- `details.raw_sample_limit`: `data/raw`에 저장할 원본 응답 샘플 개수
 - `request.max_requests_per_minute`: 분당 요청 수
 - `timezone`: 파일명과 수집 시각 기준 timezone
 
