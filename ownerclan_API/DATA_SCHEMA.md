@@ -58,8 +58,7 @@
   "shipping": {},
   "category": {},
   "image": {},
-  "sourceSpecific": {},
-  "raw": "original API item, snapshot only"
+  "sourceSpecific": {}
 }
 ```
 
@@ -70,12 +69,16 @@
 - `collectedAt`: 저장 시각
 - `successCount`: `products[]` 개수
 - `failureCount`: `failures[]` 개수
-- `products[]`: 정규화 상품, snapshot에는 `raw` 포함
+- `products[]`: 정규화 상품. 원본 `raw`는 포함하지 않음
 - `failures[]`: 실패 상품 또는 요청 정보
+
+## `data/raw/ownerclan_YYYY_MMDD_HHMM_raw.json`
+
+원본 API 응답 샘플입니다. `output.raw_sample_limit` 개수만 저장합니다.
 
 ## `data/state/latest-products.json`
 
-상품별 최신 상태입니다. 변경 감지용 `fingerprint`와 최근 raw 응답 `rawSnapshots[]`를 저장합니다. raw 보관 개수는 `output.raw_retention_per_product` 설정을 따릅니다.
+상품별 최신 정규화 상태입니다. 변경 감지용 `fingerprint`를 저장하며 raw 응답은 포함하지 않습니다.
 
 ## `data/history/ownerclan_YYYY_MMDD_HHMM_product-history.json`
 

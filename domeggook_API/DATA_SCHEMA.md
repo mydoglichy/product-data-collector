@@ -46,12 +46,9 @@
   "seller": {},
   "category": {},
   "image": {},
-  "sourceSpecific": {},
-  "raw": "original API item, optional"
+  "sourceSpecific": {}
 }
 ```
-
-`raw`는 `details.raw_sample_limit` 범위 안에서만 포함됩니다.
 
 ## `data/processed/domeggook_YYYY_MMDD_HHMM_product-snapshots.json`
 
@@ -62,6 +59,10 @@
 - `failureCount`: `failures[]` 개수
 - `products[]`: 상품별 정규화 상세 데이터
 - `failures[]`: 실패 상품 또는 요청 정보
+
+## `data/raw/domeggook_YYYY_MMDD_HHMM_raw.json`
+
+원본 API 응답 샘플입니다. `details.raw_sample_limit` 개수만 저장합니다.
 
 ## `data/processed/domeggook_YYYY_MMDD_HHMM_search-ranks.json`
 

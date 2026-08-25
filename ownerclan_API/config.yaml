@@ -24,6 +24,6 @@ output:
   output_dir: ownerclan_API/data/processed
   state_dir: ownerclan_API/data/state
   log_dir: ownerclan_API/data/logs
-  raw_retention_per_product: 3
+  raw_sample_limit: 3
 
 timezone: Asia/Seoul
