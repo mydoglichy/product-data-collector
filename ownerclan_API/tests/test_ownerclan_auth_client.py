@@ -9,11 +9,12 @@ from ownerclan_API.rate_limiter import RateLimiter
 
 
 class Response:
-    def __init__(self, status_code=200, payload=None, headers=None, reason="OK"):
+    def __init__(self, status_code=200, payload=None, headers=None, reason="OK", content=None):
         self.status_code = status_code
         self._payload = payload if payload is not None else {}
         self.headers = headers or {}
         self.reason = reason
+        self.content = content
 
     def json(self):
         return self._payload
@@ -109,6 +110,15 @@ def test_graphql_too_many_requests_is_retried():
 
     assert client.graphql("query { ok }") == {"ok": True}
     assert len([call for call in session.calls if call[0] == "get"]) == 2
+
+
+def test_graphql_utf8_content_is_used_before_response_text_decoding():
+    provider = StubProvider(["token"])
+    content = json.dumps({"data": {"name": "상품 상세정보에 별도 표기"}}, ensure_ascii=False).encode("utf-8")
+    session = Session([Response(payload={"data": {"name": "ìí"}}, content=content)])
+    client = OwnerclanClient(provider, "production", RateLimiter(0), 10, 0, 60, session=session)
+
+    assert client.graphql("query { item { name } }") == {"name": "상품 상세정보에 별도 표기"}
 
 
 class StubProvider:
