@@ -24,7 +24,7 @@ from .storage import (
     load_tracked_products,
     update_latest_and_history,
 )
-from .time_utils import now_iso, today_string, to_unix_millis
+from .time_utils import now_iso, output_file_stamp, to_unix_millis
 
 
 LOGGER = logging.getLogger("ownerclan_API.sync_incremental")
@@ -128,23 +128,25 @@ def sync_incremental(
                 merge_discovered_product(tracked, key, "incremental", "updated_date_range", collected_at)
         save_tracked_products(config.output.tracked_products_path, tracked)
         output_dir = config.output.output_dir
+        data_dir = output_dir.parent
+        file_stamp = output_file_stamp("ownerclan", config.timezone)
         merge_product_snapshots(
-            output_dir / f"product-snapshots-{today_string(config.timezone)}.json",
+            output_dir / f"{file_stamp}_product-snapshots.json",
             collected_at,
             products,
             failures,
         )
         update_latest_and_history(
-            latest_path=output_dir / "latest-products.json",
-            history_path=output_dir / "history" / f"product-history-{today_string(config.timezone)}.json",
+            latest_path=config.output.state_dir / "latest-products.json",
+            history_path=data_dir / "history" / f"{file_stamp}_product-history.json",
             collected_at=collected_at,
             products=products,
             raw_retention_per_product=config.output.raw_retention_per_product,
         )
         if histories:
-            save_state(output_dir / "item-histories-latest.json", {"collectedAt": collected_at, "histories": histories})
+            save_state(data_dir / "history" / f"{file_stamp}_item-histories.json", {"collectedAt": collected_at, "histories": histories})
         if failures:
-            save_failures(output_dir / "failures.json", collected_at, failures)
+            save_failures(data_dir / "summaries" / f"{file_stamp}_failures.json", collected_at, failures)
         if completed and not failures:
             state["lastSuccessfulItemSyncAt"] = date_to_iso
             save_state(state_path, state)

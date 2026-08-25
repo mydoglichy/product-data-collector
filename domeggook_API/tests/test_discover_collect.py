@@ -30,7 +30,7 @@ def test_discover_uses_all_market_and_sort_combinations_without_real_api(tmp_pat
     assert len(client.list_requests) == 4
     assert result["discoveredCount"] == 8
     assert result["newProductCount"] == 2
-    tracked = load_tracked_products(api_dir / "tracked_products.json")
+    tracked = load_tracked_products(api_dir / "data" / "state" / "tracked_products.json")
     assert set(tracked) == {"100", "200"}
     assert tracked["100"]["markets"] == ["dome", "supply"]
     assert tracked["100"]["reasons"] == ["popular", "recent"]
@@ -40,7 +40,7 @@ def test_collect_details_batches_and_writes_snapshot_without_real_api(tmp_path):
     api_dir = tmp_path / "domeggook_API"
     api_dir.mkdir()
     atomic_write_json(
-        api_dir / "tracked_products.json",
+        api_dir / "data" / "state" / "tracked_products.json",
         {str(value): {"productId": str(value), "active": True} for value in range(205)},
     )
     client = FakeClient()

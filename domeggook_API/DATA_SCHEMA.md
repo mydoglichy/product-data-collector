@@ -1,18 +1,27 @@
 # Domeggook API Data Schema
 
-이 문서는 도매꾹/도매매 API 수집 결과의 현재 파일 구조를 정리합니다. DB 연동 시에는 `product-snapshots-YYYY-MM-DD.json`의 `products[]`를 상품 상세 snapshot 기준으로 사용합니다.
+도매꾹/도매매 API 수집 결과의 파일 구조입니다. DB 적재 기준은 `data/processed/*_product-snapshots.json`의 `products[]`와 `data/processed/*_search-ranks.json`의 `ranks[]`입니다.
 
-## `tracked_products.json`
+## 파일명 규칙
 
-상품번호별 추적 마스터입니다. key는 상품번호 문자열입니다.
+런타임 결과 파일은 `domeggook_YYYY_MMDD_HHMM_역할.json` 형식을 사용합니다.
+
+- 예: `domeggook_2026_0825_1810_product-snapshots.json`
+- 예: `domeggook_2026_0825_1810_search-ranks.json`
+
+시각은 `config.yaml`의 `timezone` 기준입니다. `data/state/tracked_products.json`은 다음 실행이 계속 읽는 상태 파일이므로 고정 이름을 유지합니다.
+
+## `data/state/tracked_products.json`
+
+상품번호별 추적 마스터입니다.
 
 ```json
 {
   "{productId}": {
     "productId": "string",
     "keywords": ["string"],
-    "markets": ["dome | supply | string"],
-    "reasons": ["string"],
+    "markets": ["dome | supply"],
+    "reasons": ["popular | recent"],
     "firstSeenAt": "ISO-8601 datetime",
     "lastSeenAt": "ISO-8601 datetime",
     "active": "boolean"
@@ -20,92 +29,43 @@
 }
 ```
 
-## `output/product-snapshots-YYYY-MM-DD.json`
+## Normalized Product
 
-일별 상품 상세 snapshot입니다. 같은 날짜 파일은 상품번호 기준으로 병합됩니다.
+상품 상세 snapshot의 `products[]`에 들어가는 정규화 상품 구조입니다.
 
 ```json
 {
+  "source": "domeggook",
+  "productId": "string | null",
   "collectedAt": "ISO-8601 datetime",
-  "successCount": "integer",
-  "failureCount": "integer",
-  "products": [
-    {
-      "productId": "string | null",
-      "collectedAt": "ISO-8601 datetime",
-      "status": "string | null",
-      "productName": "string | null",
-      "keywords": "any",
-      "registeredAt": "any",
-      "saleStartedAt": "any",
-      "saleEndedAt": "any",
-      "prices": {
-        "domeCurrentSupplyPrice": "any",
-        "domeOriginalSupplyPrice": "any",
-        "supplyCurrentSupplyPrice": "any",
-        "supplyOriginalSupplyPrice": "any",
-        "minimumRetailPrice": "any",
-        "recommendedRetailPrice": "any"
-      },
-      "inventory": {
-        "stockQuantity": "any",
-        "domeMoq": "any",
-        "domeMaxOrderQuantity": "any",
-        "domeOrderUnit": "any",
-        "supplyOrderUnit": "any"
-      },
-      "shipping": {
-        "method": "any",
-        "feePayer": "any",
-        "domeFee": "any",
-        "domeFeeType": "any",
-        "supplyFee": "any",
-        "supplyFeeType": "any",
-        "preparationPeriod": "any",
-        "averageShippingDays": "any",
-        "fastShipping": "any",
-        "overseasDirectShipping": "any"
-      },
-      "markets": {
-        "domeOnSale": "any",
-        "supplyOnSale": "any"
-      },
-      "seller": {
-        "id": "any",
-        "nickname": "any",
-        "type": "any",
-        "grade": "any",
-        "excellentSeller": "any",
-        "averageSatisfaction": "any",
-        "reviewCount": "any"
-      },
-      "category": {
-        "code": "any",
-        "name": "any"
-      },
-      "image": {
-        "representativeUrl": "any",
-        "lastChangedAt": "any"
-      },
-      "raw": "original API item, optional"
-    }
-  ],
-  "failures": [
-    {
-      "productId": "string | null",
-      "error": "string | null",
-      "code": "string | null"
-    }
-  ]
+  "status": "string | null",
+  "productName": "string | null",
+  "prices": {},
+  "inventory": {},
+  "shipping": {},
+  "seller": {},
+  "category": {},
+  "image": {},
+  "sourceSpecific": {},
+  "raw": "original API item, optional"
 }
 ```
 
-`raw`는 설정값 `details.raw_sample_limit` 범위 안에서만 포함됩니다.
+`raw`는 `details.raw_sample_limit` 범위 안에서만 포함됩니다.
 
-## `output/search-ranks-YYYY-MM-DD.json`
+## `data/processed/domeggook_YYYY_MMDD_HHMM_product-snapshots.json`
 
-키워드 검색에서 발견된 순위 이력입니다.
+상품 상세 snapshot입니다.
+
+- `collectedAt`: 저장 시각
+- `successCount`: `products[]` 개수
+- `failureCount`: `failures[]` 개수
+- `products[]`: 상품별 정규화 상세 데이터
+- `failures[]`: 실패 상품 또는 요청 정보
+
+## `data/processed/domeggook_YYYY_MMDD_HHMM_search-ranks.json`
+
+검색 순위 기록입니다.
 
 - `collectedAt`: 마지막 rank 레코드의 수집 시각
-- `ranks[]`: `collectedAt`, `keyword`, `market`, `sort`, `rank`, `productId`, `productName` 등을 포함하는 검색 노출 레코드
-
+- `ranks[]`: `collectedAt`, `keyword`, `market`, `sort`, `reason`, `productId`, `rank`

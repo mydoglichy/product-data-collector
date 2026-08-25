@@ -21,7 +21,7 @@ from .storage import (
     save_failures,
     update_latest_and_history,
 )
-from .time_utils import now_iso, today_string
+from .time_utils import now_iso, output_file_stamp
 
 
 LOGGER = logging.getLogger("ownerclan_API.collect_product_details")
@@ -64,21 +64,23 @@ def collect_details(
 
     if not dry_run:
         output_dir = config.output.output_dir
+        data_dir = output_dir.parent
+        file_stamp = output_file_stamp("ownerclan", config.timezone)
         merge_product_snapshots(
-            output_dir / f"product-snapshots-{today_string(config.timezone)}.json",
+            output_dir / f"{file_stamp}_product-snapshots.json",
             collected_at,
             unique_products.values(),
             failures,
         )
         update_latest_and_history(
-            latest_path=output_dir / "latest-products.json",
-            history_path=output_dir / "history" / f"product-history-{today_string(config.timezone)}.json",
+            latest_path=config.output.state_dir / "latest-products.json",
+            history_path=data_dir / "history" / f"{file_stamp}_product-history.json",
             collected_at=collected_at,
             products=unique_products.values(),
             raw_retention_per_product=config.output.raw_retention_per_product,
         )
         if failures:
-            save_failures(output_dir / "failures.json", collected_at, failures)
+            save_failures(data_dir / "summaries" / f"{file_stamp}_failures.json", collected_at, failures)
 
     return {
         "trackedCount": len(product_keys),

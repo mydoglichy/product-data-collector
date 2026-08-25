@@ -25,7 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run Ownerclan discovery, detail collection, and incremental sync.")
     parser.add_argument("--config", default=None)
     parser.add_argument("--limit", type=int, default=None, help="Limit keywords and active product keys for a small real API run.")
-    parser.add_argument("--dry-run", action="store_true", help="Call API but do not write tracked/output/state files.")
+    parser.add_argument("--dry-run", action="store_true", help="Call API but do not write data files.")
     args = parser.parse_args(argv)
 
     project_root = find_project_root(Path.cwd())

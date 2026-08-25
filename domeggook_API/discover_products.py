@@ -11,7 +11,7 @@ from .logging_config import configure_logging
 from .parsing import parse_list_items, parse_product_id
 from .rate_limiter import RateLimiter
 from .storage import append_search_ranks, load_tracked_products, merge_discovered_product, save_tracked_products
-from .time_utils import now_iso, today_string
+from .time_utils import now_iso, output_file_stamp
 
 
 LOGGER = logging.getLogger("domeggook_API.discover_products")
@@ -38,7 +38,8 @@ def discover(
             max_retries=config.request.max_retries,
         )
 
-    tracked_path = project_root / "domeggook_API" / "tracked_products.json"
+    data_dir = project_root / "domeggook_API" / "data"
+    tracked_path = data_dir / "state" / "tracked_products.json"
     tracked = load_tracked_products(tracked_path)
     search_rank_records: list[dict[str, object]] = []
     discovered = 0
@@ -87,7 +88,7 @@ def discover(
     if not dry_run:
         save_tracked_products(tracked_path, tracked)
         append_search_ranks(
-            project_root / "domeggook_API" / "output" / f"search-ranks-{today_string(config.timezone)}.json",
+            data_dir / "processed" / f"{output_file_stamp('domeggook', config.timezone)}_search-ranks.json",
             search_rank_records,
         )
 
@@ -104,11 +105,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Discover Domeggook/Domeme product ids from keyword searches.")
     parser.add_argument("--config", default=None)
     parser.add_argument("--limit", type=int, default=None, help="Limit keywords for a small real API run.")
-    parser.add_argument("--dry-run", action="store_true", help="Call API but do not write tracked/output files.")
+    parser.add_argument("--dry-run", action="store_true", help="Call API but do not write data files.")
     args = parser.parse_args(argv)
 
     project_root = find_project_root(Path.cwd())
-    configure_logging(project_root / "domeggook_API" / "logs")
+    configure_logging(project_root / "domeggook_API" / "data" / "logs")
     config = load_config(Path(args.config) if args.config else project_root / "domeggook_API" / "config.yaml")
     result = discover(project_root, config, keyword_limit=args.limit, dry_run=args.dry_run)
     print(result)

@@ -87,7 +87,7 @@ def test_atomic_write_json_replaces_valid_file(tmp_path):
 
 
 def test_product_snapshots_merge_by_product_id(tmp_path):
-    path = tmp_path / "product-snapshots-2026-08-22.json"
+    path = tmp_path / "domeggook_2026_0822_0900_product-snapshots.json"
 
     merge_product_snapshots(path, "2026-08-22T09:00:00+09:00", [{"productId": "1", "price": "1000"}], [])
     payload = merge_product_snapshots(

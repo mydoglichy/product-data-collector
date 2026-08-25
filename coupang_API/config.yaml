@@ -4,3 +4,6 @@ request:
   limit: 10
   image_size: 512x512
   srp_link_only: false
+
+output:
+  raw_sample_limit: 3

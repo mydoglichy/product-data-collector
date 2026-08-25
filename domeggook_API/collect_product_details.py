@@ -11,7 +11,7 @@ from .logging_config import configure_logging
 from .parsing import parse_detail_products
 from .rate_limiter import RateLimiter
 from .storage import active_product_ids, chunked, load_tracked_products, merge_product_snapshots
-from .time_utils import now_iso, today_string
+from .time_utils import now_iso, output_file_stamp
 
 
 LOGGER = logging.getLogger("domeggook_API.collect_product_details")
@@ -25,7 +25,8 @@ def collect_details(
     dry_run: bool = False,
     client: DomeggookClient | None = None,
 ) -> dict[str, int]:
-    tracked = load_tracked_products(project_root / "domeggook_API" / "tracked_products.json")
+    data_dir = project_root / "domeggook_API" / "data"
+    tracked = load_tracked_products(data_dir / "state" / "tracked_products.json")
     product_ids = active_product_ids(tracked)
     if product_limit is not None:
         product_ids = product_ids[:product_limit]
@@ -66,7 +67,7 @@ def collect_details(
 
     if not dry_run:
         merge_product_snapshots(
-            project_root / "domeggook_API" / "output" / f"product-snapshots-{today_string(config.timezone)}.json",
+            data_dir / "processed" / f"{output_file_stamp('domeggook', config.timezone)}_product-snapshots.json",
             collected_at,
             unique_products.values(),
             failures,
@@ -83,11 +84,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Collect Domeggook/Domeme product detail snapshots.")
     parser.add_argument("--config", default=None)
     parser.add_argument("--limit", type=int, default=None, help="Limit active product ids for a small real API run.")
-    parser.add_argument("--dry-run", action="store_true", help="Call API but do not write output files.")
+    parser.add_argument("--dry-run", action="store_true", help="Call API but do not write data files.")
     args = parser.parse_args(argv)
 
     project_root = find_project_root(Path.cwd())
-    configure_logging(project_root / "domeggook_API" / "logs")
+    configure_logging(project_root / "domeggook_API" / "data" / "logs")
     config = load_config(Path(args.config) if args.config else project_root / "domeggook_API" / "config.yaml")
     result = collect_details(project_root, config, product_limit=args.limit, dry_run=args.dry_run)
     print(result)
