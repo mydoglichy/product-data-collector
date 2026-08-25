@@ -79,7 +79,7 @@ def test_real_detail_nested_shape_is_parsed():
     assert product["status"] == "판매중"
     assert product["prices"]["domeCurrentSupplyPrice"] == "1~9개: 2,000원 / 10개 이상: 1,800원"
     assert product["prices"]["supplyCurrentSupplyPrice"] == 1700
-    assert product["inventory"]["stockQuantity"] == "999"
+    assert product["inventory"]["stockQuantity"] == 999
     assert product["shipping"]["domeFee"] == 3000
     assert product["markets"]["supplyOnSale"] == "Y"
     assert product["seller"]["nickname"] == "판매자"
@@ -103,7 +103,32 @@ def test_tiered_price_string_is_preserved_without_int_casting():
     products, _ = parse_detail_products(payload, "2026-08-22T09:00:00+09:00")
 
     assert products[0]["prices"]["domeCurrentSupplyPrice"] == "1~9개: 2,000원 / 10개 이상: 1,800원"
-    assert products[0]["prices"]["supplyCurrentSupplyPrice"] == "1,700"
+    assert products[0]["prices"]["supplyCurrentSupplyPrice"] == 1700
+
+
+def test_numeric_detail_strings_are_cast_for_db_ready_fields():
+    payload = {
+        "domeggook": {
+            "item": [
+                {
+                    "no": "12345678",
+                    "price": {"supply": "1,700"},
+                    "qty": {"inventory": "8,250", "domeMoq": "10"},
+                    "deli": {"dome": {"fee": "3,000"}, "sendAvg": "1.5"},
+                }
+            ]
+        }
+    }
+
+    products, failures = parse_detail_products(payload, "2026-08-22T09:00:00+09:00")
+
+    assert failures == []
+    product = products[0]
+    assert product["prices"]["supplyCurrentSupplyPrice"] == 1700
+    assert product["inventory"]["stockQuantity"] == 8250
+    assert product["inventory"]["domeMoq"] == 10
+    assert product["shipping"]["domeFee"] == 3000
+    assert product["shipping"]["averageShippingDays"] == 1.5
 
 
 def test_detail_item_level_error_does_not_drop_batch():

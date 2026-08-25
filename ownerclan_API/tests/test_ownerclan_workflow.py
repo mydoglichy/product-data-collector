@@ -246,6 +246,34 @@ def test_total_stock_ignores_missing_quantities():
     assert calculate_total_stock(options) == 4
 
 
+def test_numeric_ownerclan_strings_are_cast_for_db_ready_fields():
+    item = _item(
+        "W11",
+        options=[
+            {"optionAttributes": [], "price": "1,500", "quantity": "5"},
+            {"optionAttributes": [{"name": "size", "value": "L"}], "price": "2,000", "quantity": "3"},
+        ],
+    )
+    item["price"] = "8,250"
+    item["fixedPrice"] = "9,900"
+    item["quantity"] = "10"
+    item["shippingFee"] = "3,000"
+    item["boxQuantity"] = "12"
+    item["guaranteedShippingPeriod"] = "2"
+
+    product = normalize_item(item, "2026-08-24T00:00:00+09:00")
+
+    assert product["prices"]["currentSupplyPrice"] == 8250
+    assert product["prices"]["fixedPrice"] == 9900
+    assert product["inventory"]["apiStockQuantity"] == 10
+    assert product["inventory"]["stockQuantity"] == 8
+    assert product["options"][0]["price"] == 1500
+    assert product["options"][0]["quantity"] == 5
+    assert product["shipping"]["fee"] == 3000
+    assert product["sourceSpecific"]["boxQuantity"] == 12
+    assert product["sourceSpecific"]["guaranteedShippingPeriod"] == 2
+
+
 def _config(tmp_path: Path):
     api_dir = tmp_path / "ownerclan_API"
     data_dir = api_dir / "data"

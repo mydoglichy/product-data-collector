@@ -103,6 +103,18 @@ def test_missing_fields_are_preserved_as_none_and_rank_falls_back_to_position():
     assert records[0]["api"]["landingUrl"] is None
 
 
+def test_numeric_product_price_string_is_cast_for_db_ready_record():
+    payload = {
+        "rCode": "0",
+        "rMessage": "OK",
+        "data": {"productData": [{"productId": 1, "productPrice": "8,250"}]},
+    }
+
+    records = parse_product_records(payload, "case", "2026-08-21T00:00:00Z")
+
+    assert records[0]["api"]["productPrice"] == 8250
+
+
 def test_limit_is_capped_at_official_maximum():
     uri = build_search_uri(SearchRequest(keyword="x", limit=99))
 

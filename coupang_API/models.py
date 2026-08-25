@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import re
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 
 SOURCE = "coupang_partners_product_search"
+_NUMERIC_TEXT_RE = re.compile(r"^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$")
 
 
 @dataclass(frozen=True)
@@ -73,7 +75,7 @@ def parse_product_records(
             vendorItemId=vendor_item_id,
             productImage=product.get("productImage"),
             productName=product.get("productName"),
-            productPrice=product.get("productPrice"),
+            productPrice=_number(product.get("productPrice")),
             productUrl=product_url,
             landingUrl=landing_url,
         )
@@ -95,6 +97,20 @@ def _rank(value: Any, fallback: int) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _number(value: Any) -> int | float | Any:
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (int, float)):
+        return value
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not _NUMERIC_TEXT_RE.fullmatch(text):
+        return value
+    normalized = text.replace(",", "")
+    return float(normalized) if "." in normalized else int(normalized)
 
 
 def _query_value(url: Any, key: str) -> str | None:

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 
+
+_NUMERIC_TEXT_RE = re.compile(r"^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$")
 
 STATUS_MAP = {
     "available": "available",
@@ -48,17 +51,17 @@ def normalize_item(item: dict[str, Any], collected_at: str) -> dict[str, Any]:
         "registeredAt": item.get("createdAt"),
         "updatedAt": item.get("updatedAt"),
         "prices": {
-            "currentSupplyPrice": item.get("price"),
-            "fixedPrice": item.get("fixedPrice"),
+            "currentSupplyPrice": number_or_original(item.get("price")),
+            "fixedPrice": number_or_original(item.get("fixedPrice")),
         },
         "inventory": {
             "stockQuantity": calculate_total_stock(options),
             "stockQuantitySource": "sum(options[].quantity)",
-            "apiStockQuantity": item.get("quantity"),
+            "apiStockQuantity": number_or_original(item.get("quantity")),
         },
         "options": options,
         "shipping": {
-            "fee": item.get("shippingFee"),
+            "fee": number_or_original(item.get("shippingFee")),
             "type": item.get("shippingType"),
         },
         "category": {
@@ -81,9 +84,9 @@ def normalize_item(item: dict[str, Any], collected_at: str) -> dict[str, Any]:
             "adultOnly": item.get("adultOnly"),
             "returnable": item.get("returnable"),
             "noReturnReason": item.get("noReturnReason"),
-            "guaranteedShippingPeriod": item.get("guaranteedShippingPeriod"),
+            "guaranteedShippingPeriod": number_or_original(item.get("guaranteedShippingPeriod")),
             "openmarketSellable": item.get("openmarketSellable"),
-            "boxQuantity": item.get("boxQuantity"),
+            "boxQuantity": number_or_original(item.get("boxQuantity")),
             "attributes": item.get("attributes"),
             "closingTime": item.get("closingTime"),
             "returnCriteria": item.get("returnCriteria"),
@@ -139,8 +142,8 @@ def normalize_options(value: Any) -> list[dict[str, Any]]:
                 "skuKey": option.get("key"),
                 "skuType": "default" if not normalized_attrs else "option",
                 "optionAttributes": normalized_attrs,
-                "price": option.get("price"),
-                "quantity": option.get("quantity"),
+                "price": number_or_original(option.get("price")),
+                "quantity": number_or_original(option.get("quantity")),
             }
         )
     return options
@@ -157,6 +160,20 @@ def calculate_total_stock(options: list[dict[str, Any]]) -> int | None:
         elif isinstance(quantity, str) and quantity.strip().isdigit():
             quantities.append(int(quantity.strip()))
     return sum(quantities) if quantities else None
+
+
+def number_or_original(value: Any) -> int | float | Any:
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (int, float)):
+        return value
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not _NUMERIC_TEXT_RE.fullmatch(text):
+        return value
+    normalized = text.replace(",", "")
+    return float(normalized) if "." in normalized else int(normalized)
 
 
 def normalize_status(value: str | None) -> str | None:
