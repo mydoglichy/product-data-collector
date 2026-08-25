@@ -20,7 +20,7 @@ def test_normal_response_parsing():
                     "productImage": "https://image",
                     "productName": "상품",
                     "productPrice": 9900,
-                    "productUrl": "https://link.coupang.com/product",
+                    "productUrl": "https://link.coupang.com/product?itemId=456&vendorItemId=789",
                 }
             ],
         },
@@ -36,10 +36,12 @@ def test_normal_response_parsing():
                 "isRocket": True,
                 "isFreeShipping": False,
                 "productId": 123,
+                "itemId": "456",
+                "vendorItemId": "789",
                 "productImage": "https://image",
                 "productName": "상품",
                 "productPrice": 9900,
-                "productUrl": "https://link.coupang.com/product",
+                "productUrl": "https://link.coupang.com/product?itemId=456&vendorItemId=789",
                 "landingUrl": "https://link.coupang.com/search",
             },
             "collector": {
@@ -94,6 +96,8 @@ def test_missing_fields_are_preserved_as_none_and_rank_falls_back_to_position():
     records = parse_product_records(payload, "휴대용 안경집", "2026-08-21T00:00:00Z")
 
     assert records[0]["api"]["productId"] == 1
+    assert records[0]["api"]["itemId"] is None
+    assert records[0]["api"]["vendorItemId"] is None
     assert records[0]["api"]["rank"] == 1
     assert records[0]["api"]["productName"] is None
     assert records[0]["api"]["landingUrl"] is None

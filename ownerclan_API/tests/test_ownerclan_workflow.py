@@ -175,6 +175,7 @@ def test_options_stock_status_normalization_and_source_specific_preserved():
 
 def test_repeated_category_specific_placeholders_are_compacted_in_source_specific():
     item = _item("W10")
+    item["images"] = ["https://example.com/a.jpg", "https://example.com/a.jpg"]
     item["metadata"] = {
         "vendorKey": "V1",
         "productNotificationInformation": {
@@ -182,7 +183,13 @@ def test_repeated_category_specific_placeholders_are_compacted_in_source_specifi
                 "상품 상세정보에 별도 표기",
                 "상품 상세정보에 별도 표기",
                 "판매자 연락처 참고",
-            ]
+            ],
+            "common": [
+                "상품 상세정보에 별도 표기",
+                "상품 상세정보에 별도 표기",
+                "상품 상세정보에 별도 표기",
+                "상품 상세정보에 별도 표기",
+            ],
         },
     }
 
@@ -190,8 +197,13 @@ def test_repeated_category_specific_placeholders_are_compacted_in_source_specifi
     notification = product["sourceSpecific"]["metadata"]["productNotificationInformation"]
 
     assert "categorySpecific" not in notification
+    assert "common" not in notification
     assert notification["categorySpecificSummary"]["count"] == 3
+    assert notification["commonSummary"]["count"] == 4
     assert product["raw"]["metadata"]["productNotificationInformation"]["categorySpecific"]
+    assert product["raw"]["metadata"]["productNotificationInformation"]["common"] == ["상품 상세정보에 별도 표기"]
+    assert product["image"]["urls"] == ["https://example.com/a.jpg"]
+    assert product["raw"]["images"] == ["https://example.com/a.jpg"]
 
 
 def test_raw_retention_per_product_limit(tmp_path):

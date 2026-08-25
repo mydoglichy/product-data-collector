@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any
@@ -97,7 +98,7 @@ class OwnerclanClient:
                 time.sleep(self._backoff_seconds(attempt, retry_after))
                 continue
             try:
-                payload = response.json()
+                payload = _json_response(response)
             except ValueError as exc:
                 if response.status_code >= 400:
                     raise OwnerclanHttpError(response.status_code, _safe_response_message(response)) from exc
@@ -136,7 +137,7 @@ def _retry_after_seconds(value: str | None, maximum: float) -> float | None:
 
 def _safe_response_message(response: requests.Response) -> str:
     try:
-        payload = response.json()
+        payload = _json_response(response)
     except ValueError:
         return response.reason or "request failed"
     message = payload.get("message") or payload.get("msg") or response.reason or "request failed"
@@ -158,3 +159,14 @@ def _summarize_errors(errors: Any) -> str:
                 messages.append(str(error))
         return "; ".join(messages)
     return str(errors)[:300]
+
+
+def _json_response(response: requests.Response) -> dict[str, Any]:
+    content = getattr(response, "content", None)
+    if isinstance(content, bytes) and content:
+        payload = json.loads(content.decode("utf-8-sig"))
+    else:
+        payload = response.json()
+    if not isinstance(payload, dict):
+        raise ValueError("JSON response must be an object")
+    return payload
