@@ -12,7 +12,7 @@ from ownerclan_API.config import (
 )
 from ownerclan_API.discover_products import discover
 from ownerclan_API.normalization import calculate_total_stock, normalize_item, normalize_options
-from ownerclan_API.storage import atomic_write_json, load_json_object, load_tracked_products, update_latest_and_history
+from ownerclan_API.storage import append_search_ranks, atomic_write_json, load_json_object, load_tracked_products, update_latest_and_history
 from ownerclan_API.sync_incremental import sync_incremental
 
 
@@ -59,6 +59,31 @@ def test_keyword_default_and_new_search_and_dedupes_product_keys(tmp_path):
     tracked = load_tracked_products(config.output.tracked_products_path)
     assert set(tracked) == {"W1", "W2"}
     assert tracked["W1"]["searchTypes"] == ["default_top", "register_date_desc"]
+
+
+def test_search_rank_history_keeps_same_product_at_different_ranks(tmp_path):
+    path = tmp_path / "ownerclan_2026_0822_0900_search-ranks.json"
+    records = [
+        {
+            "collectedAt": "2026-08-22T09:00:00+09:00",
+            "keyword": "case",
+            "searchType": "default_top",
+            "productId": "W1",
+            "rank": 1,
+        },
+        {
+            "collectedAt": "2026-08-22T09:00:00+09:00",
+            "keyword": "case",
+            "searchType": "default_top",
+            "productId": "W1",
+            "rank": 2,
+        },
+    ]
+
+    payload = append_search_ranks(path, records + [records[0]])
+
+    assert len(payload["ranks"]) == 2
+    assert [record["rank"] for record in payload["ranks"]] == [1, 2]
 
 
 def test_multiple_item_query_falls_back_to_items_by_keys_then_single_item():

@@ -6,6 +6,7 @@ import pytest
 
 from domeggook_API.storage import (
     FileLock,
+    append_search_ranks,
     active_product_ids,
     atomic_write_json,
     chunked,
@@ -102,6 +103,33 @@ def test_product_snapshots_merge_by_product_id(tmp_path):
     assert [product["productId"] for product in payload["products"]] == ["1", "2"]
     assert payload["products"][0]["price"] == "900"
     assert json.loads(path.read_text(encoding="utf-8")) == payload
+
+
+def test_search_rank_history_keeps_same_product_at_different_ranks(tmp_path):
+    path = tmp_path / "domeggook_2026_0822_0900_search-ranks.json"
+    records = [
+        {
+            "collectedAt": "2026-08-22T09:00:00+09:00",
+            "keyword": "안경 케이스",
+            "market": "dome",
+            "sort": "ha",
+            "productId": "1",
+            "rank": 1,
+        },
+        {
+            "collectedAt": "2026-08-22T09:00:00+09:00",
+            "keyword": "안경 케이스",
+            "market": "dome",
+            "sort": "ha",
+            "productId": "1",
+            "rank": 2,
+        },
+    ]
+
+    payload = append_search_ranks(path, records + [records[0]])
+
+    assert len(payload["ranks"]) == 2
+    assert [record["rank"] for record in payload["ranks"]] == [1, 2]
 
 
 def test_file_lock_rejects_recent_existing_lock(tmp_path):

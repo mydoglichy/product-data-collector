@@ -205,12 +205,13 @@ def _append_unique(values: Any, value: str) -> list[str]:
     return result
 
 
-def _rank_key(record: dict[str, Any]) -> tuple[str, str, str, str, str]:
+def _rank_key(record: dict[str, Any]) -> tuple[str, str, str, str, str, str]:
     return (
         str(record.get("collectedAt")),
         str(record.get("keyword")),
         str(record.get("market")),
         str(record.get("sort")),
         str(record.get("productId")),
+        str(record.get("rank")),
     )
 
