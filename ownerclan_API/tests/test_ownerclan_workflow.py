@@ -89,9 +89,9 @@ def test_collect_details_writes_latest_history_and_failures(tmp_path):
     result = collect_details(tmp_path, config, client=client)
 
     assert result["successCount"] == 2
-    latest = load_json_object(config.output.output_dir / "latest-products.json")
+    latest = load_json_object(config.output.state_dir / "latest-products.json")
     assert latest["W1"]["rawSnapshots"]
-    history_files = list((config.output.output_dir / "history").glob("product-history-*.json"))
+    history_files = list((config.output.output_dir.parent / "history").glob("ownerclan_*_product-history.json"))
     assert history_files
 
 
@@ -240,9 +240,10 @@ def test_total_stock_ignores_missing_quantities():
 
 def _config(tmp_path: Path):
     api_dir = tmp_path / "ownerclan_API"
-    output_dir = api_dir / "output"
-    state_dir = api_dir / "state"
-    log_dir = api_dir / "logs"
+    data_dir = api_dir / "data"
+    output_dir = data_dir / "processed"
+    state_dir = data_dir / "state"
+    log_dir = data_dir / "logs"
     api_dir.mkdir(exist_ok=True)
     keyword_file = api_dir / "keywords.txt"
     keyword_file.write_text("case\n", encoding="utf-8")
@@ -252,7 +253,7 @@ def _config(tmp_path: Path):
         details=DetailsConfig(batch_size=2),
         incremental=IncrementalConfig(page_size=2, overlap_minutes=120, include_item_histories=False),
         request=RequestConfig(interval_seconds=0, timeout_seconds=10, max_retries=0, retry_after_max_seconds=1),
-        output=OutputConfig(api_dir / "tracked_products.json", output_dir, state_dir, log_dir, 3),
+        output=OutputConfig(state_dir / "tracked_products.json", output_dir, state_dir, log_dir, 3),
         timezone="Asia/Seoul",
     )
 

@@ -40,11 +40,38 @@ class JsonlWriter:
 
 def save_raw_response(raw_dir: Path, run_stamp: str, keyword: str, payload: dict[str, Any]) -> Path:
     raw_dir.mkdir(parents=True, exist_ok=True)
-    path = raw_dir / f"{run_stamp}_{slugify(keyword)}_raw.json"
+    path = raw_dir / f"{run_stamp}_raw_{slugify(keyword)}.json"
     with path.open("x", encoding="utf-8") as fp:
         json.dump(payload, fp, ensure_ascii=False, indent=2, sort_keys=True)
         fp.write("\n")
     return path
+
+
+def prune_raw_samples(raw_dir: Path, keep_per_run: int) -> int:
+    if keep_per_run < 0:
+        raise ValueError("keep_per_run must be zero or greater")
+    if not raw_dir.exists():
+        return 0
+
+    removed = 0
+    by_run_stamp: dict[str, list[Path]] = {}
+    for path in raw_dir.glob("*_raw*.json"):
+        run_stamp = _raw_run_stamp(path)
+        by_run_stamp.setdefault(run_stamp, []).append(path)
+
+    for paths in by_run_stamp.values():
+        paths.sort(key=lambda path: (path.stat().st_mtime, path.name), reverse=True)
+        for path in paths[keep_per_run:]:
+            path.unlink()
+            removed += 1
+    return removed
+
+
+def _raw_run_stamp(path: Path) -> str:
+    name = path.name
+    if "_raw_" in name:
+        return name.split("_raw_", 1)[0]
+    return name.split("_", 1)[0]
 
 
 def save_summary(summary_dir: Path, run_stamp: str, payload: dict[str, Any]) -> Path:

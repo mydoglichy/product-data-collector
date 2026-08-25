@@ -1,10 +1,20 @@
 # Coupang API Data Schema
 
-이 문서는 쿠팡 파트너스 상품 검색 API 수집 결과의 현재 파일 구조를 정리합니다. 신규 저장소나 DB 테이블을 만들 때는 `data/processed/*.jsonl`의 레코드를 기준 구조로 봅니다.
+쿠팡 파트너스 상품 검색 API 수집 결과의 파일 구조입니다. DB 적재 기준은 `data/processed/*_products.jsonl`의 한 줄 단위 상품 레코드입니다.
 
-## `data/processed/{run_stamp}_products.jsonl`
+## 파일명 규칙
 
-한 줄에 상품 1개를 저장하는 JSON Lines 파일입니다.
+런타임 결과 파일은 `coupang_YYYY_MMDD_HHMM_역할.확장자` 형식을 사용합니다.
+
+- 예: `coupang_2026_0825_1810_products.jsonl`
+- 예: `coupang_2026_0825_1810_summary.json`
+- 예: `coupang_2026_0825_1810_raw_USB_허브.json`
+
+시각은 `Asia/Seoul` 기준입니다.
+
+## `data/processed/coupang_YYYY_MMDD_HHMM_products.jsonl`
+
+상품 1개를 한 줄 JSON으로 저장합니다.
 
 ```json
 {
@@ -30,17 +40,21 @@
 }
 ```
 
-## `data/raw/{run_stamp}_{keyword}_raw.json`
+## `data/raw/coupang_YYYY_MMDD_HHMM_raw_{keyword}.json`
 
-키워드별 API 원본 응답입니다. 장애 분석과 필드 추가 검토용으로만 사용하고, 정규화 기준은 `data/processed/*.jsonl`을 우선합니다.
+키워드별 API 원본 응답 샘플입니다. `config.yaml`의 `output.raw_sample_limit` 개수만 저장합니다. 기본값은 3개입니다.
 
-## `data/summaries/{run_stamp}_summary.json`
+## `data/summaries/coupang_YYYY_MMDD_HHMM_summary.json`
 
-수집 실행 단위 요약입니다.
+한 번의 실행 요약입니다.
 
-- `runStamp`: 실행 식별 시각
-- `startedAt`, `finishedAt`: 실행 시작/종료 시각
-- `processedPath`: JSONL 결과 파일 경로
-- `totalWritten`: 저장된 상품 레코드 수
-- `successKeywords`: 성공 키워드 목록
-- `failureKeywords`: 실패 키워드 목록
+- `runStartedAt`, `runEndedAt`: 실행 시작/종료 시각
+- `totalKeywords`, `processedKeywords`: 전체/처리 키워드 수
+- `successCount`, `failureCount`: 성공/실패 수
+- `collectedProductCount`: 저장된 상품 수
+- `duplicateProductCount`: 같은 실행 안에서 제거된 완전 중복 수
+- `rawSampleLimit`, `rawSavedCount`, `removedRawFileCount`: raw 샘플 저장/정리 결과
+
+## `data/state/product_search_checkpoint.json`
+
+중간 재시작용 상태 파일입니다. 모든 키워드가 성공하면 삭제됩니다. 다음 실행이 읽어야 하므로 timestamp 파일명으로 만들지 않습니다.

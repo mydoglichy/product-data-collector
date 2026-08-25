@@ -42,3 +42,21 @@ def test_config_forces_official_search_request_values(tmp_path):
     assert config.srp_link_only is False
     assert config.image_size == "512x512"
 
+
+def test_config_raw_sample_limit_defaults_and_validates(tmp_path):
+    default_path = tmp_path / "default.yaml"
+    default_path.write_text("request: {}\n", encoding="utf-8")
+    custom_path = tmp_path / "custom.yaml"
+    custom_path.write_text("request: {}\noutput:\n  raw_sample_limit: 7\n", encoding="utf-8")
+    invalid_path = tmp_path / "invalid.yaml"
+    invalid_path.write_text("request: {}\noutput:\n  raw_sample_limit: -1\n", encoding="utf-8")
+
+    assert load_config(default_path).raw_sample_limit == 3
+    assert load_config(custom_path).raw_sample_limit == 7
+
+    try:
+        load_config(invalid_path)
+    except ValueError as exc:
+        assert "raw_sample_limit" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")

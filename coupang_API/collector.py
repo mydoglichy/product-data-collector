@@ -11,7 +11,8 @@ from .client import CoupangApiError, CoupangPartnersClient, SearchRequest
 from .config import CollectorConfig, load_config, load_credentials, load_keywords
 from .models import parse_product_records
 from .rate_limiter import RateLimiter
-from .storage import JsonlWriter, save_raw_response, save_summary
+from .storage import JsonlWriter, prune_raw_samples, save_raw_response, save_summary
+from .time_utils import output_file_stamp
 
 
 LOGGER = logging.getLogger("coupang_API")
@@ -26,14 +27,15 @@ def collect_once(project_root: Path, config: CollectorConfig) -> int:
     )
     keywords = load_keywords(project_root / "coupang_API" / "keywords.txt")
     started_at = datetime.now(timezone.utc)
-    run_stamp = started_at.strftime("%Y%m%dT%H%M%S%fZ")
+    run_stamp = output_file_stamp("coupang", dt=started_at)
     processed_path = project_root / "coupang_API" / "data" / "processed" / f"{run_stamp}_products.jsonl"
-    checkpoint = Checkpoint.load(project_root / "coupang_API" / "data" / "checkpoints" / "product_search_checkpoint.json")
+    checkpoint = Checkpoint.load(project_root / "coupang_API" / "data" / "state" / "product_search_checkpoint.json")
     success_keywords: list[str] = []
     failure_keywords: list[str] = []
     skipped_keywords = [keyword for keyword in keywords if checkpoint.is_completed(keyword)]
     total_products = 0
     duplicate_products = 0
+    raw_saved_count = 0
 
     LOGGER.info(
         "starting collection total=%d skipped_completed=%d pending=%d requests_per_minute=%d",
@@ -57,12 +59,14 @@ def collect_once(project_root: Path, config: CollectorConfig) -> int:
             collected_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             try:
                 payload = client.search_products(request)
-                save_raw_response(
-                    project_root / "coupang_API" / "data" / "raw",
-                    run_stamp,
-                    keyword,
-                    payload,
-                )
+                if raw_saved_count < config.raw_sample_limit:
+                    save_raw_response(
+                        project_root / "coupang_API" / "data" / "raw",
+                        run_stamp,
+                        keyword,
+                        payload,
+                    )
+                    raw_saved_count += 1
                 records = parse_product_records(
                     payload,
                     requested_keyword=keyword,
@@ -86,6 +90,7 @@ def collect_once(project_root: Path, config: CollectorConfig) -> int:
     all_completed = len(checkpoint.completed_keywords.intersection(keywords)) == len(keywords)
     if all_completed and not failure_keywords:
         checkpoint.clear()
+    removed_raw_files = prune_raw_samples(project_root / "coupang_API" / "data" / "raw", config.raw_sample_limit)
 
     summary = {
         "runStartedAt": started_at.isoformat().replace("+00:00", "Z"),
@@ -97,6 +102,9 @@ def collect_once(project_root: Path, config: CollectorConfig) -> int:
         "failureCount": len(failure_keywords),
         "collectedProductCount": total_products,
         "duplicateProductCount": duplicate_products,
+        "rawSampleLimit": config.raw_sample_limit,
+        "rawSavedCount": raw_saved_count,
+        "removedRawFileCount": removed_raw_files,
         "successKeywords": success_keywords,
         "failureKeywords": failure_keywords,
         "source": "coupang_partners_product_search",

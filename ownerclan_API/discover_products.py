@@ -14,7 +14,7 @@ from .normalization import extract_connection_items
 from .queries import all_items_query
 from .rate_limiter import RateLimiter
 from .storage import append_search_ranks, load_tracked_products, merge_discovered_product, save_tracked_products
-from .time_utils import now_iso, today_string
+from .time_utils import now_iso, output_file_stamp
 
 
 LOGGER = logging.getLogger("ownerclan_API.discover_products")
@@ -83,7 +83,7 @@ def discover(
 
     if not dry_run:
         save_tracked_products(config.output.tracked_products_path, tracked)
-        append_search_ranks(config.output.output_dir / f"search-ranks-{today_string(config.timezone)}.json", rank_records)
+        append_search_ranks(config.output.output_dir / f"{output_file_stamp('ownerclan', config.timezone)}_search-ranks.json", rank_records)
 
     return {
         "keywordCount": len(keywords),

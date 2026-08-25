@@ -19,6 +19,7 @@ class CollectorConfig:
     srp_link_only: bool = False
     sub_id: str | None = None
     requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE
+    raw_sample_limit: int = 3
 
 
 def load_config(path: Path) -> CollectorConfig:
@@ -34,6 +35,12 @@ def load_config(path: Path) -> CollectorConfig:
     requests_per_minute = int(payload.get("requests_per_minute", DEFAULT_REQUESTS_PER_MINUTE))
     if requests_per_minute < 1:
         raise ValueError("requests_per_minute must be greater than zero")
+    output = payload.get("output") or {}
+    if not isinstance(output, dict):
+        raise ValueError("config.yaml output must be a mapping")
+    raw_sample_limit = int(output.get("raw_sample_limit", 3))
+    if raw_sample_limit < 0:
+        raise ValueError("output.raw_sample_limit must be zero or greater")
 
     return CollectorConfig(
         limit=10,
@@ -41,6 +48,7 @@ def load_config(path: Path) -> CollectorConfig:
         srp_link_only=False,
         sub_id=request.get("sub_id"),
         requests_per_minute=min(requests_per_minute, MAX_REQUESTS_PER_MINUTE),
+        raw_sample_limit=raw_sample_limit,
     )
 
 
