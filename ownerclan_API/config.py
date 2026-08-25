@@ -46,7 +46,7 @@ class OutputConfig:
     output_dir: Path
     state_dir: Path
     log_dir: Path
-    raw_retention_per_product: int
+    raw_sample_limit: int
 
 
 @dataclass(frozen=True)
@@ -106,9 +106,9 @@ def load_config(path: Path, project_root: Path | None = None) -> OwnerclanConfig
     if page_size > MAX_ALL_ITEMS_FIRST:
         raise ValueError("incremental.page_size must be 1000 or less")
 
-    raw_retention = int(output.get("raw_retention_per_product", 3))
-    if raw_retention < 0:
-        raise ValueError("output.raw_retention_per_product must be zero or greater")
+    raw_sample_limit = int(output.get("raw_sample_limit", output.get("raw_retention_per_product", 3)))
+    if raw_sample_limit < 0:
+        raise ValueError("output.raw_sample_limit must be zero or greater")
 
     return OwnerclanConfig(
         environment=env,
@@ -136,7 +136,7 @@ def load_config(path: Path, project_root: Path | None = None) -> OwnerclanConfig
             output_dir=_resolve(root, output.get("output_dir") or "ownerclan_API/data/processed"),
             state_dir=_resolve(root, output.get("state_dir") or "ownerclan_API/data/state"),
             log_dir=_resolve(root, output.get("log_dir") or "ownerclan_API/data/logs"),
-            raw_retention_per_product=raw_retention,
+            raw_sample_limit=raw_sample_limit,
         ),
         timezone=timezone,
     )

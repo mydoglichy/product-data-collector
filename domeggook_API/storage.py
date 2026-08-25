@@ -163,6 +163,27 @@ def merge_product_snapshots(
     return payload
 
 
+def save_raw_samples(
+    path: Path,
+    collected_at: str,
+    products: Iterable[dict[str, Any]],
+    limit: int,
+) -> dict[str, Any]:
+    if limit < 0:
+        raise ValueError("limit must be zero or greater")
+    items: list[dict[str, Any]] = []
+    for product in products:
+        if len(items) >= limit:
+            break
+        raw = product.get("raw")
+        if raw is None:
+            continue
+        items.append({"productId": product.get("productId"), "raw": raw})
+    payload = {"collectedAt": collected_at, "items": items}
+    atomic_write_json(path, payload)
+    return payload
+
+
 def chunked(values: list[str], size: int) -> list[list[str]]:
     if size < 1:
         raise ValueError("size must be greater than zero")

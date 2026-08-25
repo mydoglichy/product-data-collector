@@ -18,6 +18,7 @@ from .storage import (
     chunked,
     load_tracked_products,
     merge_product_snapshots,
+    save_raw_samples,
     save_failures,
     update_latest_and_history,
 )
@@ -66,18 +67,23 @@ def collect_details(
         output_dir = config.output.output_dir
         data_dir = output_dir.parent
         file_stamp = output_file_stamp("ownerclan", config.timezone)
+        save_raw_samples(
+            data_dir / "raw" / f"{file_stamp}_raw.json",
+            collected_at,
+            unique_products.values(),
+            config.output.raw_sample_limit,
+        )
         merge_product_snapshots(
             output_dir / f"{file_stamp}_product-snapshots.json",
             collected_at,
-            unique_products.values(),
+            (_without_raw(product) for product in unique_products.values()),
             failures,
         )
         update_latest_and_history(
             latest_path=config.output.state_dir / "latest-products.json",
             history_path=data_dir / "history" / f"{file_stamp}_product-history.json",
             collected_at=collected_at,
-            products=unique_products.values(),
-            raw_retention_per_product=config.output.raw_retention_per_product,
+            products=(_without_raw(product) for product in unique_products.values()),
         )
         if failures:
             save_failures(data_dir / "summaries" / f"{file_stamp}_failures.json", collected_at, failures)
@@ -88,6 +94,12 @@ def collect_details(
         "failureCount": len(failures),
         "fallbackBatchCount": fallback_count,
     }
+
+
+def _without_raw(product: dict[str, Any]) -> dict[str, Any]:
+    result = dict(product)
+    result.pop("raw", None)
+    return result
 
 
 def fetch_items_batch(client: Any, keys: list[str]) -> list[dict[str, Any]]:

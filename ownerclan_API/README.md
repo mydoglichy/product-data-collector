@@ -21,6 +21,7 @@
 | 상품 상세 snapshot | `ownerclan_API/data/processed/ownerclan_YYYY_MMDD_HHMM_product-snapshots.json` |
 | 검색 순위 이력 | `ownerclan_API/data/processed/ownerclan_YYYY_MMDD_HHMM_search-ranks.json` |
 | 변경 상품 이력 | `ownerclan_API/data/history/ownerclan_YYYY_MMDD_HHMM_product-history.json` |
+| raw 원본 샘플 | `ownerclan_API/data/raw/ownerclan_YYYY_MMDD_HHMM_raw.json` |
 | 최신 상품 상태 | `ownerclan_API/data/state/latest-products.json` |
 | 실패 요약 | `ownerclan_API/data/summaries/ownerclan_YYYY_MMDD_HHMM_failures.json` |
 | 증분 수집 상태 | `ownerclan_API/data/state/incremental-state.json` |
@@ -50,14 +51,14 @@ output:
   output_dir: ownerclan_API/data/processed
   state_dir: ownerclan_API/data/state
   log_dir: ownerclan_API/data/logs
-  raw_retention_per_product: 3
+  raw_sample_limit: 3
 ```
 
 - `discovery.top_limit_per_keyword`: 기본 검색 상위 상품 수
 - `discovery.new_limit_per_keyword`: 최신 등록순 상위 상품 수
 - `details.batch_size`: 상세 조회 batch 크기
 - `incremental.overlap_minutes`: 증분 수집 기준 시각 겹침
-- `output.raw_retention_per_product`: 상품별 최근 raw 응답 보관 개수
+- `output.raw_sample_limit`: `data/raw`에 저장할 원본 응답 샘플 개수
 
 ## 실행
 

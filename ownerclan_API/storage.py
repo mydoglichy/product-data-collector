@@ -159,13 +159,39 @@ def merge_product_snapshots(
     return payload
 
 
+def save_raw_samples(
+    path: Path,
+    collected_at: str,
+    products: Iterable[dict[str, Any]],
+    limit: int,
+) -> dict[str, Any]:
+    if limit < 0:
+        raise ValueError("limit must be zero or greater")
+    items: list[dict[str, Any]] = []
+    for product in products:
+        if len(items) >= limit:
+            break
+        raw = product.get("raw")
+        if raw is None:
+            continue
+        items.append(
+            {
+                "productId": product.get("productId"),
+                "productKey": product.get("productKey"),
+                "raw": raw,
+            }
+        )
+    payload = {"collectedAt": collected_at, "items": items}
+    atomic_write_json(path, payload)
+    return payload
+
+
 def update_latest_and_history(
     *,
     latest_path: Path,
     history_path: Path,
     collected_at: str,
     products: Iterable[dict[str, Any]],
-    raw_retention_per_product: int,
 ) -> dict[str, int]:
     latest = load_json_object(latest_path)
     changed: list[dict[str, Any]] = []
@@ -173,22 +199,14 @@ def update_latest_and_history(
         product_id = str(product.get("productId") or "")
         if not product_id:
             continue
-        raw = product.get("raw")
         normalized = copy.deepcopy(product)
         normalized.pop("raw", None)
         existing = latest.get(product_id) if isinstance(latest.get(product_id), dict) else {}
         old_fingerprint = existing.get("fingerprint") if isinstance(existing, dict) else None
         fingerprint = _fingerprint(normalized)
-        raw_snapshots = existing.get("rawSnapshots") if isinstance(existing, dict) and isinstance(existing.get("rawSnapshots"), list) else []
-        if raw_retention_per_product > 0 and raw is not None:
-            raw_snapshots.append({"collectedAt": collected_at, "raw": raw})
-            raw_snapshots = raw_snapshots[-raw_retention_per_product:]
-        else:
-            raw_snapshots = []
         latest[product_id] = {
             **normalized,
             "fingerprint": fingerprint,
-            "rawSnapshots": raw_snapshots,
         }
         if old_fingerprint != fingerprint:
             changed.append(normalized)
