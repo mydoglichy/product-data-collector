@@ -29,7 +29,7 @@ def test_optional_detail_fields_are_saved_as_none():
     assert products[0]["status"] is None
     assert products[0]["prices"]["domeCurrentSupplyPrice"] is None
     assert products[0]["seller"]["nickname"] is None
-    assert products[0]["image"]["representativeUrl"] is None
+    assert "image" not in products[0]
 
 
 def test_real_detail_nested_shape_is_parsed():
@@ -84,7 +84,8 @@ def test_real_detail_nested_shape_is_parsed():
     assert product["markets"]["supplyOnSale"] == "Y"
     assert product["seller"]["nickname"] == "판매자"
     assert product["category"]["code"] == "1010"
-    assert product["image"]["representativeUrl"] == "https://image"
+    assert "keywords" not in product
+    assert "image" not in product
 
 
 def test_tiered_price_string_is_preserved_without_int_casting():
@@ -182,10 +183,27 @@ def test_detail_parser_keeps_zero_false_and_known_raw_aliases():
 
 
 def test_detail_parser_limits_raw_records():
-    payload = {"domeggook": {"item": [{"no": "1"}, {"no": "2"}]}}
+    payload = {
+        "domeggook": {
+            "item": [
+                {
+                    "no": "1",
+                    "basis": {"keywords": {"item": ["case"]}},
+                    "detail": {"infoDuty": {"item": [{"desc": "상세정보 별도표기"}]}},
+                    "desc": {"contents": {"item": "<img src='https://image'>"}},
+                    "thumb": {"original": "https://image"},
+                },
+                {"no": "2"},
+            ]
+        }
+    }
 
     products, failures = parse_detail_products(payload, "2026-08-22T09:00:00+09:00", raw_limit=1)
 
     assert failures == []
     assert "raw" in products[0]
     assert "raw" not in products[1]
+    assert "keywords" not in products[0]["raw"]["basis"]
+    assert "detail" not in products[0]["raw"]
+    assert "desc" not in products[0]["raw"]
+    assert "thumb" not in products[0]["raw"]

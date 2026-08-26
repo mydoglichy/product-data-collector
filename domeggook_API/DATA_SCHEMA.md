@@ -45,10 +45,11 @@
   "shipping": {},
   "seller": {},
   "category": {},
-  "image": {},
   "sourceSpecific": {}
 }
 ```
+
+상품 상세 snapshot에는 공급사 원본 키워드, 이미지 URL, 상세문구 HTML, raw 응답을 저장하지 않습니다. 검색에 사용한 키워드와 순위는 `search-ranks.json`에만 저장합니다.
 
 ## `data/processed/domeggook_YYYY_MMDD_HHMM_product-snapshots.json`
 
@@ -62,7 +63,7 @@
 
 ## `data/raw/domeggook_YYYY_MMDD_HHMM_raw.json`
 
-원본 API 응답 샘플입니다. `details.raw_sample_limit` 개수만 저장합니다.
+원본 API 응답 샘플입니다. 항상 최대 3개 상품만 저장하며, 이미지 URL, 상세문구, 공급사 원본 키워드는 제거한 축약본입니다.
 
 ## `data/processed/domeggook_YYYY_MMDD_HHMM_search-ranks.json`
 

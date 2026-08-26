@@ -171,6 +171,7 @@ def save_raw_samples(
 ) -> dict[str, Any]:
     if limit < 0:
         raise ValueError("limit must be zero or greater")
+    limit = min(limit, 3)
     items: list[dict[str, Any]] = []
     for product in products:
         if len(items) >= limit:

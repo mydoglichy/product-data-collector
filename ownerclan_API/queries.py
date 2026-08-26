@@ -16,16 +16,13 @@ origin
 price
 pricePolicy
 fixedPrice
-searchKeywords
 category {
   key
   name
   fullName
 }
-content
 shippingFee
 shippingType
-images(size: large)
 status
 options {
   optionAttributes {
@@ -39,14 +36,11 @@ options {
 taxFree
 adultOnly
 returnable
-noReturnReason
 guaranteedShippingPeriod
 openmarketSellable
 boxQuantity
 attributes
 closingTime
-returnCriteria
-metadata
 """
 
 MINIMAL_ITEM_FIELDS = """
@@ -59,7 +53,6 @@ model
 production
 origin
 price
-searchKeywords
 category {
   key
   name
@@ -67,7 +60,6 @@ category {
 }
 shippingFee
 shippingType
-images(size: large)
 status
 options {
   optionAttributes {
@@ -81,7 +73,6 @@ options {
 taxFree
 adultOnly
 openmarketSellable
-metadata
 """
 
 

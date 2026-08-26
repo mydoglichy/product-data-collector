@@ -126,7 +126,7 @@ def sync_incremental(
         for product in products:
             key = str(product.get("productId") or "")
             if key:
-                merge_discovered_product(tracked, key, "incremental", "updated_date_range", collected_at)
+                merge_discovered_product(tracked, key, None, "updated_date_range", collected_at)
         save_tracked_products(config.output.tracked_products_path, tracked)
         output_dir = config.output.output_dir
         data_dir = output_dir.parent

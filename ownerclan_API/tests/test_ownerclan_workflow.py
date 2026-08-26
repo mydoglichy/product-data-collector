@@ -12,7 +12,14 @@ from ownerclan_API.config import (
 )
 from ownerclan_API.discover_products import discover
 from ownerclan_API.normalization import calculate_total_stock, normalize_item, normalize_options
-from ownerclan_API.storage import append_search_ranks, atomic_write_json, load_json_object, load_tracked_products, update_latest_and_history
+from ownerclan_API.storage import (
+    append_search_ranks,
+    atomic_write_json,
+    load_json_object,
+    load_tracked_products,
+    save_raw_samples,
+    update_latest_and_history,
+)
 from ownerclan_API.sync_incremental import sync_incremental
 
 
@@ -84,6 +91,15 @@ def test_search_rank_history_keeps_same_product_at_different_ranks(tmp_path):
 
     assert len(payload["ranks"]) == 2
     assert [record["rank"] for record in payload["ranks"]] == [1, 2]
+
+
+def test_raw_samples_are_capped_at_three_products(tmp_path):
+    path = tmp_path / "raw.json"
+    products = [{"productId": f"W{index}", "productKey": f"W{index}", "raw": {"key": f"W{index}"}} for index in range(5)]
+
+    payload = save_raw_samples(path, "2026-08-22T09:00:00+09:00", products, 20)
+
+    assert [item["productId"] for item in payload["items"]] == ["W0", "W1", "W2"]
 
 
 def test_multiple_item_query_falls_back_to_items_by_keys_then_single_item():
@@ -180,6 +196,9 @@ def test_incremental_item_limit_stops_after_requested_items(tmp_path):
     result = sync_incremental(tmp_path, config, item_limit=1, client=ManyItemsClient())
 
     assert result["successCount"] == 1
+    tracked = load_tracked_products(config.output.tracked_products_path)
+    assert tracked["W1"]["keywords"] == []
+    assert tracked["W1"]["searchTypes"] == ["updated_date_range"]
 
 
 def test_options_stock_status_normalization_and_source_specific_preserved():
@@ -206,7 +225,7 @@ def test_options_stock_status_normalization_and_source_specific_preserved():
     assert product["sourceSpecific"]["vendorKey"] == "V1"
 
 
-def test_repeated_category_specific_placeholders_are_compacted_in_source_specific():
+def test_metadata_content_keywords_and_images_are_not_saved():
     item = _item("W10")
     item["images"] = ["https://example.com/a.jpg", "https://example.com/a.jpg"]
     item["metadata"] = {
@@ -227,16 +246,15 @@ def test_repeated_category_specific_placeholders_are_compacted_in_source_specifi
     }
 
     product = normalize_item(item, "2026-08-24T00:00:00+09:00")
-    notification = product["sourceSpecific"]["metadata"]["productNotificationInformation"]
 
-    assert "categorySpecific" not in notification
-    assert "common" not in notification
-    assert notification["categorySpecificSummary"]["count"] == 3
-    assert notification["commonSummary"]["count"] == 4
-    assert product["raw"]["metadata"]["productNotificationInformation"]["categorySpecific"]
-    assert product["raw"]["metadata"]["productNotificationInformation"]["common"] == ["상품 상세정보에 별도 표기"]
-    assert product["image"]["urls"] == ["https://example.com/a.jpg"]
-    assert product["raw"]["images"] == ["https://example.com/a.jpg"]
+    assert "metadata" not in product["sourceSpecific"]
+    assert "content" not in product["sourceSpecific"]
+    assert "keywords" not in product
+    assert "image" not in product
+    assert "metadata" not in product["raw"]
+    assert "content" not in product["raw"]
+    assert "searchKeywords" not in product["raw"]
+    assert "images" not in product["raw"]
 
 
 def test_latest_products_do_not_store_raw_snapshots(tmp_path):

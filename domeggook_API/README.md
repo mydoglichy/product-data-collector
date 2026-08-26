@@ -52,12 +52,12 @@ discovery:
 
 details:
   batch_size: 100
-  raw_sample_limit: 20
+  raw_sample_limit: 3
 ```
 
 - `discovery.items_per_keyword`: 키워드/마켓/정렬별 검색 상품 수
 - `details.batch_size`: 상세 조회 batch 크기
-- `details.raw_sample_limit`: `data/raw`에 저장할 원본 응답 샘플 개수
+- `details.raw_sample_limit`: `data/raw`에 저장할 원본 응답 샘플 개수. 저장 함수에서 항상 최대 3개로 제한합니다.
 - `request.max_requests_per_minute`: 분당 요청 수
 - `timezone`: 파일명과 수집 시각 기준 timezone
 
