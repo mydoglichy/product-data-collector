@@ -22,7 +22,6 @@
     "productId": "string",
     "productKey": "string",
     "keywords": ["string"],
-    "searchTypes": ["default_top | register_date_desc | string"],
     "reasons": ["string"],
     "firstSeenAt": "ISO-8601 datetime",
     "lastSeenAt": "ISO-8601 datetime",
@@ -87,6 +86,24 @@
 ## `data/processed/ownerclan_YYYY_MMDD_HHMM_search-ranks.json`
 
 키워드 검색에서 발견된 상품 순위 기록입니다.
+
+```json
+{
+  "collectedAt": "ISO-8601 datetime",
+  "ranks": [
+    {
+      "collectedAt": "ISO-8601 datetime",
+      "keyword": "string",
+      "sortBy": "default | registerDateDesc | string",
+      "productId": "string",
+      "productKey": "string",
+      "rank": "integer"
+    }
+  ]
+}
+```
+
+`sortBy`는 API 요청에 실제 사용된 정렬 조건입니다. 기본 정렬은 API 요청에 `sortBy` 파라미터를 보내지 않고, 저장 시에는 `"default"`로 기록합니다.
 
 ## `data/state/incremental-state.json`
 

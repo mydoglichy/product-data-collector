@@ -99,3 +99,5 @@ DB 적재 기준은 timestamp가 붙은 snapshot/history/rank 파일입니다.
 - `data/state/tracked_products.json` -> 추적 상품 마스터 테이블
 
 DB 저장 시에는 `collectedAt`과 별도의 `collection_run_id`를 함께 저장하는 편이 좋습니다. 파일명 stamp와 같은 값을 `collection_run_id`로 쓰면 파일 저장 방식과 DB 저장 방식을 맞출 수 있습니다.
+
+검색 순위 파일의 `ranks[]`는 `keyword`, `sortBy`, `productId`, `productKey`, `rank`, `collectedAt`을 저장합니다. 기본 정렬은 API 요청에 `sortBy` 파라미터를 보내지 않고 저장 데이터에는 `"default"`로 남기며, 최신 등록순은 `"registerDateDesc"`로 남깁니다.

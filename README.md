@@ -138,7 +138,7 @@ snapshot은 같은 실행에서 같은 상품이 중복 적재되지 않도록 `
 권장 유니크 후보:
 
 - 쿠팡 검색 결과: `(source, keyword, collected_at, product_id, rank)`
-- 오너클랜 검색 순위: `(source, keyword, search_type, collected_at, product_id, rank)`
+- 오너클랜 검색 순위: `(source, keyword, sort_by, collected_at, product_id, rank)`
 - 도매꾹 검색 순위: `(source, keyword, market, sort, collected_at, product_id, rank)`
 
 동일 API 응답 안에서 완전히 같은 rank 레코드가 반복될 때만 중복 제거합니다. 서로 다른 키워드, 정렬, 마켓, 수집 시각의 레코드는 같은 상품이어도 모두 남깁니다.
@@ -146,7 +146,7 @@ snapshot은 같은 실행에서 같은 상품이 중복 적재되지 않도록 `
 ### 중복 제거 기준
 
 - 수집 입력 키워드는 파일 로딩 단계에서 공백/주석을 제거하고 동일 키워드를 1회만 실행합니다.
-- tracked products는 상품 ID 기준으로 합치되 `keywords`, `markets`, `reasons`, `searchTypes`는 누적 배열로 보존합니다.
+- tracked products는 상품 ID 기준으로 합치되 `keywords`, `markets`, `reasons`는 누적 배열로 보존합니다.
 - snapshot은 같은 run에서 동일 상품이 여러 경로로 발견될 수 있으므로 상품 ID 기준으로 1개만 저장하되 발견 경로는 tracked metadata에 남깁니다.
 - search rank history는 분석 이력이므로 상품 ID 기준 dedupe를 하지 않습니다.
 - raw sample은 운영 데이터가 아니므로 보관 개수와 보관 기간을 제한합니다.
