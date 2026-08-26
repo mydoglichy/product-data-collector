@@ -76,7 +76,7 @@ def save_tracked_products(path: Path, tracked: dict[str, dict[str, Any]]) -> Non
 def merge_discovered_product(
     tracked: dict[str, dict[str, Any]],
     product_key: str,
-    keyword: str,
+    keyword: str | None,
     search_type: str,
     seen_at: str,
 ) -> bool:
@@ -96,7 +96,8 @@ def merge_discovered_product(
     )
     record["productId"] = str(record.get("productId") or product_key)
     record["productKey"] = str(record.get("productKey") or product_key)
-    record["keywords"] = _append_unique(record.get("keywords"), keyword)
+    if keyword:
+        record["keywords"] = _append_unique(record.get("keywords"), keyword)
     record["searchTypes"] = _append_unique(record.get("searchTypes"), search_type)
     record["reasons"] = _append_unique(record.get("reasons"), search_type)
     record.setdefault("firstSeenAt", seen_at)
@@ -167,6 +168,7 @@ def save_raw_samples(
 ) -> dict[str, Any]:
     if limit < 0:
         raise ValueError("limit must be zero or greater")
+    limit = min(limit, 3)
     items: list[dict[str, Any]] = []
     for product in products:
         if len(items) >= limit:

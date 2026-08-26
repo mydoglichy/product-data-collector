@@ -13,6 +13,7 @@ from domeggook_API.storage import (
     load_tracked_products,
     merge_discovered_product,
     merge_product_snapshots,
+    save_raw_samples,
 )
 
 
@@ -130,6 +131,15 @@ def test_search_rank_history_keeps_same_product_at_different_ranks(tmp_path):
 
     assert len(payload["ranks"]) == 2
     assert [record["rank"] for record in payload["ranks"]] == [1, 2]
+
+
+def test_raw_samples_are_capped_at_three_products(tmp_path):
+    path = tmp_path / "raw.json"
+    products = [{"productId": str(index), "raw": {"no": str(index)}} for index in range(5)]
+
+    payload = save_raw_samples(path, "2026-08-22T09:00:00+09:00", products, 20)
+
+    assert [item["productId"] for item in payload["items"]] == ["0", "1", "2"]
 
 
 def test_file_lock_rejects_recent_existing_lock(tmp_path):

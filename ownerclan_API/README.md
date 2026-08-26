@@ -58,7 +58,7 @@ output:
 - `discovery.new_limit_per_keyword`: 최신 등록순 상위 상품 수
 - `details.batch_size`: 상세 조회 batch 크기
 - `incremental.overlap_minutes`: 증분 수집 기준 시각 겹침
-- `output.raw_sample_limit`: `data/raw`에 저장할 원본 응답 샘플 개수
+- `output.raw_sample_limit`: `data/raw`에 저장할 원본 응답 샘플 개수. 저장 함수에서 항상 최대 3개로 제한합니다.
 
 ## 실행
 

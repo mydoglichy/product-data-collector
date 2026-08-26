@@ -44,7 +44,6 @@
   "status": "available | soldout | discontinued | unavailable | string | null",
   "sourceStatus": "string | null",
   "productName": "string | null",
-  "keywords": ["string"],
   "prices": {
     "currentSupplyPrice": "number | string | null",
     "fixedPrice": "number | string | null"
@@ -57,10 +56,11 @@
   "options": [],
   "shipping": {},
   "category": {},
-  "image": {},
   "sourceSpecific": {}
 }
 ```
+
+상품 상세 snapshot에는 공급사 원본 검색키워드, 이미지 URL, 상세문구 HTML, 외부몰 자동등록용 카테고리 매핑 metadata, raw 응답을 저장하지 않습니다. 검색에 사용한 키워드와 순위는 `search-ranks.json`에만 저장합니다.
 
 ## `data/processed/ownerclan_YYYY_MMDD_HHMM_product-snapshots.json`
 
@@ -74,7 +74,7 @@
 
 ## `data/raw/ownerclan_YYYY_MMDD_HHMM_raw.json`
 
-원본 API 응답 샘플입니다. `output.raw_sample_limit` 개수만 저장합니다.
+원본 API 응답 샘플입니다. 항상 최대 3개 상품만 저장하며, 이미지 URL, 상세문구, 공급사 원본 검색키워드, 외부몰 카테고리 매핑 metadata는 제거한 축약본입니다.
 
 ## `data/state/latest-products.json`
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import re
 from typing import Any
 
@@ -69,9 +70,7 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
     category = _first_dict(item, ("category", "cate", "cat"))
     category_current = _first_dict(category, ("current",))
     delivery = _first_dict(item, ("deli", "delivery", "deliveryInfo", "ship", "shipping"))
-    image = _first_dict(item, ("thumb", "image", "imageInfo", "img"))
     channel = _first_dict(item, ("channel",))
-    keywords = _get(basis, "keywords") or _get(item, "keyword", "keywords")
 
     product_id = parse_product_id(item)
     product = {
@@ -79,7 +78,6 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
         "collectedAt": collected_at,
         "status": _coalesce(_get(basis, "status"), _get(item, "status", "itemStatus", "saleStatus")),
         "productName": _coalesce(_get(basis, "title"), _get(item, "title", "itemName", "name")),
-        "keywords": keywords,
         "registeredAt": _coalesce(_get(basis, "dateReg"), _get(item, "regDate", "regDt", "createdAt")),
         "saleStartedAt": _coalesce(_get(basis, "dateStart"), _get(item, "startDate", "saleStartDate", "saleStartedAt")),
         "saleEndedAt": _coalesce(_get(basis, "dateEnd"), _get(item, "endDate", "saleEndDate", "saleEndedAt")),
@@ -133,14 +131,22 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
             "code": _get(category_current, "code") or _get(category, "code", "categoryCode", "cateCode"),
             "name": _get(category_current, "name") or _get(category, "name", "categoryName", "cateName"),
         },
-        "image": {
-            "representativeUrl": _coalesce(_get(image, "original", "large", "url", "representativeUrl", "mainImageUrl"), _get(item, "imageUrl", "thumb", "img")),
-            "lastChangedAt": _get(image, "lastUpdate", "lastChangedAt", "imageChangedAt", "imgLastDate"),
-        },
     }
     if include_raw:
-        product["raw"] = item
+        product["raw"] = compact_raw_item_for_snapshot(item)
     return product
+
+
+def compact_raw_item_for_snapshot(item: dict[str, Any]) -> dict[str, Any]:
+    result = copy.deepcopy(item)
+    for key in ("detail", "desc", "description", "content", "contents", "thumb", "image", "imageInfo", "img", "imageUrl"):
+        result.pop(key, None)
+    basis = result.get("basis")
+    if isinstance(basis, dict):
+        basis.pop("keywords", None)
+    for key in ("keyword", "keywords"):
+        result.pop(key, None)
+    return result
 
 
 def _detail_candidates(root: Any) -> list[Any]:
