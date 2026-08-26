@@ -7,6 +7,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from product_history import upsert_product_changes
+
 
 class FileLock:
     def __init__(self, path: Path, stale_after_seconds: float = 12 * 60 * 60) -> None:
@@ -183,6 +185,32 @@ def save_raw_samples(
     payload = {"collectedAt": collected_at, "items": items}
     atomic_write_json(path, payload)
     return payload
+
+
+def update_latest_and_history(
+    *,
+    latest_path: Path,
+    history_path: Path,
+    collected_at: str,
+    products: Iterable[dict[str, Any]],
+) -> dict[str, int]:
+    stats = upsert_product_changes(
+        platform="domeggook",
+        current_path=latest_path,
+        history_path=history_path,
+        collected_at=collected_at,
+        products=products,
+    )
+    latest = _load_or_default(latest_path, {"products": {}})
+    latest_products = latest.get("products") if isinstance(latest.get("products"), dict) else {}
+    return {"latestCount": len(latest_products), "changedCount": stats["newProductCount"] + stats["changedProductCount"], **stats}
+
+
+def save_failures(path: Path, collected_at: str, failures: Iterable[dict[str, Any]]) -> None:
+    payload = _load_or_default(path, {"collectedAt": None, "failures": []})
+    records = payload.get("failures") if isinstance(payload.get("failures"), list) else []
+    records.extend(failures)
+    atomic_write_json(path, {"collectedAt": collected_at, "failures": records})
 
 
 def chunked(values: list[str], size: int) -> list[list[str]]:

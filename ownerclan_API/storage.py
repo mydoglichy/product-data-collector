@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import os
 import time
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
+
+from product_history import upsert_product_changes
 
 
 class FileLock:
@@ -195,30 +196,16 @@ def update_latest_and_history(
     collected_at: str,
     products: Iterable[dict[str, Any]],
 ) -> dict[str, int]:
-    latest = load_json_object(latest_path)
-    changed: list[dict[str, Any]] = []
-    for product in products:
-        product_id = str(product.get("productId") or "")
-        if not product_id:
-            continue
-        normalized = copy.deepcopy(product)
-        normalized.pop("raw", None)
-        existing = latest.get(product_id) if isinstance(latest.get(product_id), dict) else {}
-        old_fingerprint = existing.get("fingerprint") if isinstance(existing, dict) else None
-        fingerprint = _fingerprint(normalized)
-        latest[product_id] = {
-            **normalized,
-            "fingerprint": fingerprint,
-        }
-        if old_fingerprint != fingerprint:
-            changed.append(normalized)
-
-    atomic_write_json(latest_path, latest)
-    history_payload = load_json_object(history_path, {"collectedAt": None, "products": []})
-    history_products = history_payload.get("products") if isinstance(history_payload.get("products"), list) else []
-    history_products.extend(changed)
-    atomic_write_json(history_path, {"collectedAt": collected_at, "products": history_products})
-    return {"latestCount": len(latest), "changedCount": len(changed)}
+    stats = upsert_product_changes(
+        platform="ownerclan",
+        current_path=latest_path,
+        history_path=history_path,
+        collected_at=collected_at,
+        products=products,
+    )
+    latest = load_json_object(latest_path, {"products": {}})
+    latest_products = latest.get("products") if isinstance(latest.get("products"), dict) else {}
+    return {"latestCount": len(latest_products), "changedCount": stats["newProductCount"] + stats["changedProductCount"], **stats}
 
 
 def save_failures(path: Path, collected_at: str, failures: Iterable[dict[str, Any]]) -> None:
@@ -259,15 +246,3 @@ def _rank_key(record: dict[str, Any]) -> tuple[str, str, str, str, str]:
     )
 
 
-def _fingerprint(product: dict[str, Any]) -> str:
-    comparable = {
-        "productId": product.get("productId"),
-        "prices": product.get("prices"),
-        "inventory": product.get("inventory"),
-        "options": product.get("options"),
-        "shipping": product.get("shipping"),
-        "status": product.get("status"),
-        "sourceStatus": product.get("sourceStatus"),
-    }
-    payload = json.dumps(comparable, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

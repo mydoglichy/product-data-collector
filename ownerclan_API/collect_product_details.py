@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from product_history import append_collection_run
+
 from .client import OwnerclanGraphQLError
 from .config import OwnerclanConfig, find_project_root, load_config
 from .discover_products import make_client
@@ -43,6 +45,7 @@ def collect_details(
     client = client or make_client(project_root, config)
 
     collected_at = now_iso(config.timezone)
+    started_at = collected_at
     products: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     fallback_count = 0
@@ -79,7 +82,7 @@ def collect_details(
             (_without_raw(product) for product in unique_products.values()),
             failures,
         )
-        update_latest_and_history(
+        change_stats = update_latest_and_history(
             latest_path=config.output.state_dir / "latest-products.json",
             history_path=data_dir / "history" / f"{file_stamp}_product-history.json",
             collected_at=collected_at,
@@ -87,6 +90,19 @@ def collect_details(
         )
         if failures:
             save_failures(data_dir / "summaries" / f"{file_stamp}_failures.json", collected_at, failures)
+        append_collection_run(
+            config.output.state_dir / "collection-runs.json",
+            platform="ownerclan",
+            started_at=started_at,
+            ended_at=now_iso(config.timezone),
+            success=not failures,
+            queried_product_count=len(product_keys),
+            new_product_count=change_stats["newProductCount"],
+            changed_product_count=change_stats["changedProductCount"],
+            unchanged_product_count=change_stats["unchangedProductCount"],
+            failed_product_count=len(failures),
+            extra={"fallbackBatchCount": fallback_count},
+        )
 
     return {
         "trackedCount": len(product_keys),

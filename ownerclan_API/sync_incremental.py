@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from product_history import append_collection_run
+
 from .client import OwnerclanGraphQLError
 from .config import OwnerclanConfig, find_project_root, load_config
 from .discover_products import make_client
@@ -143,7 +145,7 @@ def sync_incremental(
             (_without_raw(product) for product in products),
             failures,
         )
-        update_latest_and_history(
+        change_stats = update_latest_and_history(
             latest_path=config.output.state_dir / "latest-products.json",
             history_path=data_dir / "history" / f"{file_stamp}_product-history.json",
             collected_at=collected_at,
@@ -156,6 +158,19 @@ def sync_incremental(
         if completed and not failures:
             state["lastSuccessfulItemSyncAt"] = date_to_iso
             save_state(state_path, state)
+        append_collection_run(
+            config.output.state_dir / "collection-runs.json",
+            platform="ownerclan",
+            started_at=date_from_iso,
+            ended_at=now_iso(config.timezone),
+            success=completed and not failures,
+            queried_product_count=len(products) + len(failures),
+            new_product_count=change_stats["newProductCount"],
+            changed_product_count=change_stats["changedProductCount"],
+            unchanged_product_count=change_stats["unchangedProductCount"],
+            failed_product_count=len(failures),
+            extra={"syncType": "incremental", "pageCount": pages},
+        )
 
     return {
         "pageCount": pages,
