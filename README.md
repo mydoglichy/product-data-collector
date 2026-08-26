@@ -137,7 +137,7 @@ snapshot은 같은 실행에서 같은 상품이 중복 적재되지 않도록 `
 
 권장 유니크 후보:
 
-- 쿠팡 검색 결과: `(source, requested_keyword, collected_at, product_id, rank)`
+- 쿠팡 검색 결과: `(source, keyword, collected_at, product_id, rank)`
 - 오너클랜 검색 순위: `(source, keyword, search_type, collected_at, product_id, rank)`
 - 도매꾹 검색 순위: `(source, keyword, market, sort, collected_at, product_id, rank)`
 

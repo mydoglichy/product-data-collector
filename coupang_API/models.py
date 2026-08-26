@@ -6,43 +6,25 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 
-SOURCE = "coupang_partners_product_search"
 _NUMERIC_TEXT_RE = re.compile(r"^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$")
 
 
 @dataclass(frozen=True)
-class ProductSearchApiFields:
+class ProductSearchRecord:
+    productId: int | str | None
+    itemId: str | None
+    vendorItemId: str | None
+    productName: str | None
+    productPrice: int | float | str | None
+    productUrl: str | None
     keyword: str | None
     rank: int | None
     isRocket: bool | None
     isFreeShipping: bool | None
-    productId: int | str | None
-    itemId: str | None
-    vendorItemId: str | None
-    productImage: str | None
-    productName: str | None
-    productPrice: int | float | str | None
-    productUrl: str | None
-    landingUrl: str | None
-
-
-@dataclass(frozen=True)
-class CollectorMetadata:
-    requestedKeyword: str
     collectedAt: str
-    source: str = SOURCE
-
-
-@dataclass(frozen=True)
-class ProductSearchRecord:
-    api: ProductSearchApiFields
-    collector: CollectorMetadata
 
     def to_json_dict(self) -> dict[str, Any]:
-        return {
-            "api": asdict(self.api),
-            "collector": asdict(self.collector),
-        }
+        return asdict(self)
 
 
 def parse_product_records(
@@ -53,7 +35,6 @@ def parse_product_records(
     data = payload.get("data") or {}
     if not isinstance(data, dict):
         data = {}
-    landing_url = data.get("landingUrl")
     product_data = data.get("productData") or []
     if not isinstance(product_data, list):
         product_data = []
@@ -65,26 +46,18 @@ def parse_product_records(
         product_url = product.get("productUrl")
         item_id = _query_value(product_url, "itemId")
         vendor_item_id = _query_value(product_url, "vendorItemId")
-        api_fields = ProductSearchApiFields(
-            keyword=product.get("keyword"),
-            rank=_rank(product.get("rank"), fallback=index),
-            isRocket=product.get("isRocket"),
-            isFreeShipping=product.get("isFreeShipping"),
+        record = ProductSearchRecord(
             productId=product.get("productId"),
             itemId=item_id,
             vendorItemId=vendor_item_id,
-            productImage=product.get("productImage"),
             productName=product.get("productName"),
             productPrice=_number(product.get("productPrice")),
             productUrl=product_url,
-            landingUrl=landing_url,
-        )
-        record = ProductSearchRecord(
-            api=api_fields,
-            collector=CollectorMetadata(
-                requestedKeyword=requested_keyword,
-                collectedAt=collected_at,
-            ),
+            keyword=product.get("keyword") or requested_keyword,
+            rank=_rank(product.get("rank"), fallback=index),
+            isRocket=product.get("isRocket"),
+            isFreeShipping=product.get("isFreeShipping"),
+            collectedAt=collected_at,
         )
         records.append(record.to_json_dict())
     return records
