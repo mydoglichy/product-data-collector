@@ -40,41 +40,40 @@ def discover(
     failures = 0
 
     searches = [
-        ("default_top", None, config.discovery.top_limit_per_keyword),
-        ("register_date_desc", "registerDateDesc", config.discovery.new_limit_per_keyword),
+        ("default", None, config.discovery.top_limit_per_keyword),
+        ("registerDateDesc", "registerDateDesc", config.discovery.new_limit_per_keyword),
     ]
     for keyword in keywords:
-        for search_type, sort_by, limit in searches:
+        for stored_sort_by, request_sort_by, limit in searches:
             collected_at = now_iso(config.timezone)
             try:
-                query = all_items_query(search=keyword, sort_by=sort_by, first=limit)
+                query = all_items_query(search=keyword, sort_by=request_sort_by, first=limit)
                 try:
                     data = client.graphql(query)
                 except OwnerclanGraphQLError as exc:
                     if not exc.looks_like_unknown_field() or _unknown_all_items_root(exc):
                         raise
-                    data = client.graphql(all_items_query(search=keyword, sort_by=sort_by, first=limit, minimal=True))
+                    data = client.graphql(all_items_query(search=keyword, sort_by=request_sort_by, first=limit, minimal=True))
                 items, _page_info = extract_connection_items(data, "allItems")
             except Exception as exc:
                 failures += 1
-                LOGGER.error("failed ownerclan discovery keyword=%r search_type=%s error=%s", keyword, search_type, exc)
+                LOGGER.error("failed ownerclan discovery keyword=%r sort_by=%s error=%s", keyword, stored_sort_by, exc)
                 continue
 
             for rank, item in enumerate(items[:limit], start=1):
                 product_key = item.get("key")
                 if product_key in (None, ""):
-                    LOGGER.warning("ownerclan list item missing key keyword=%r search_type=%s rank=%d", keyword, search_type, rank)
+                    LOGGER.warning("ownerclan list item missing key keyword=%r sort_by=%s rank=%d", keyword, stored_sort_by, rank)
                     continue
                 product_key = str(product_key)
                 discovered += 1
-                if merge_discovered_product(tracked, product_key, keyword, search_type, collected_at):
+                if merge_discovered_product(tracked, product_key, keyword, stored_sort_by, collected_at):
                     new_products += 1
                 rank_records.append(
                     {
                         "collectedAt": collected_at,
                         "keyword": keyword,
-                        "searchType": search_type,
-                        "sortBy": sort_by,
+                        "sortBy": stored_sort_by,
                         "productId": product_key,
                         "productKey": product_key,
                         "rank": rank,

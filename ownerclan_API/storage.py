@@ -67,7 +67,7 @@ def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[
 
 def load_tracked_products(path: Path) -> dict[str, dict[str, Any]]:
     payload = load_json_object(path)
-    return {str(key): value for key, value in payload.items() if isinstance(value, dict)}
+    return {str(key): _normalize_tracked_product(value) for key, value in payload.items() if isinstance(value, dict)}
 
 
 def save_tracked_products(path: Path, tracked: dict[str, dict[str, Any]]) -> None:
@@ -78,7 +78,7 @@ def merge_discovered_product(
     tracked: dict[str, dict[str, Any]],
     product_key: str,
     keyword: str | None,
-    search_type: str,
+    reason: str,
     seen_at: str,
 ) -> bool:
     created = product_key not in tracked
@@ -88,19 +88,18 @@ def merge_discovered_product(
             "productId": product_key,
             "productKey": product_key,
             "keywords": [],
-            "searchTypes": [],
             "reasons": [],
             "firstSeenAt": seen_at,
             "lastSeenAt": seen_at,
             "active": True,
         },
     )
+    record.pop("searchTypes", None)
     record["productId"] = str(record.get("productId") or product_key)
     record["productKey"] = str(record.get("productKey") or product_key)
     if keyword:
         record["keywords"] = _append_unique(record.get("keywords"), keyword)
-    record["searchTypes"] = _append_unique(record.get("searchTypes"), search_type)
-    record["reasons"] = _append_unique(record.get("reasons"), search_type)
+    record["reasons"] = _append_unique(record.get("reasons"), reason)
     record.setdefault("firstSeenAt", seen_at)
     record["lastSeenAt"] = seen_at
     record["active"] = bool(record.get("active", True))
@@ -113,17 +112,31 @@ def active_product_keys(tracked: dict[str, dict[str, Any]]) -> list[str]:
 
 def append_search_ranks(path: Path, records: Iterable[dict[str, Any]]) -> dict[str, Any]:
     payload = load_json_object(path, {"collectedAt": None, "ranks": []})
-    ranks = payload.get("ranks") if isinstance(payload.get("ranks"), list) else []
+    ranks = [_normalize_rank_record(record) for record in payload.get("ranks", []) if isinstance(record, dict)]
     seen = {_rank_key(record) for record in ranks if isinstance(record, dict)}
     for record in records:
-        key = _rank_key(record)
+        normalized = _normalize_rank_record(record)
+        key = _rank_key(normalized)
         if key in seen:
             continue
         seen.add(key)
-        ranks.append(record)
+        ranks.append(normalized)
     result = {"collectedAt": ranks[-1].get("collectedAt") if ranks else payload.get("collectedAt"), "ranks": ranks}
     atomic_write_json(path, result)
     return result
+
+
+def migrate_sortby_schema(data_dir: Path) -> dict[str, int]:
+    stats = {"trackedFiles": 0, "rankFiles": 0}
+    tracked_path = data_dir / "state" / "tracked_products.json"
+    if tracked_path.exists():
+        save_tracked_products(tracked_path, load_tracked_products(tracked_path))
+        stats["trackedFiles"] += 1
+
+    for path in sorted((data_dir / "processed").glob("*_search-ranks.json")):
+        append_search_ranks(path, [])
+        stats["rankFiles"] += 1
+    return stats
 
 
 def merge_product_snapshots(
@@ -236,11 +249,25 @@ def _append_unique(values: Any, value: str) -> list[str]:
     return result
 
 
+def _normalize_tracked_product(record: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(record)
+    normalized.pop("searchTypes", None)
+    return normalized
+
+
+def _normalize_rank_record(record: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(record)
+    normalized.pop("searchType", None)
+    if normalized.get("sortBy") is None:
+        normalized["sortBy"] = "default"
+    return normalized
+
+
 def _rank_key(record: dict[str, Any]) -> tuple[str, str, str, str, str]:
     return (
         str(record.get("collectedAt")),
         str(record.get("keyword")),
-        str(record.get("searchType")),
+        str(record.get("sortBy")),
         str(record.get("productId")),
         str(record.get("rank")),
     )

@@ -17,6 +17,7 @@ from ownerclan_API.storage import (
     atomic_write_json,
     load_json_object,
     load_tracked_products,
+    migrate_sortby_schema,
     save_raw_samples,
     update_latest_and_history,
 )
@@ -62,10 +63,16 @@ def test_keyword_default_and_new_search_and_dedupes_product_keys(tmp_path):
     assert result["discoveredCount"] == 4
     assert result["newProductCount"] == 2
     assert len(client.queries) == 2
+    assert "sortBy:" not in client.queries[0]
     assert "sortBy: registerDateDesc" in client.queries[1]
     tracked = load_tracked_products(config.output.tracked_products_path)
     assert set(tracked) == {"W1", "W2"}
-    assert tracked["W1"]["searchTypes"] == ["default_top", "register_date_desc"]
+    assert "searchTypes" not in tracked["W1"]
+    assert tracked["W1"]["reasons"] == ["default", "registerDateDesc"]
+    rank_files = list(config.output.output_dir.glob("ownerclan_*_search-ranks.json"))
+    ranks = load_json_object(rank_files[0])["ranks"]
+    assert {record["sortBy"] for record in ranks} == {"default", "registerDateDesc"}
+    assert all("searchType" not in record for record in ranks)
 
 
 def test_search_rank_history_keeps_same_product_at_different_ranks(tmp_path):
@@ -74,14 +81,14 @@ def test_search_rank_history_keeps_same_product_at_different_ranks(tmp_path):
         {
             "collectedAt": "2026-08-22T09:00:00+09:00",
             "keyword": "case",
-            "searchType": "default_top",
+            "sortBy": "default",
             "productId": "W1",
             "rank": 1,
         },
         {
             "collectedAt": "2026-08-22T09:00:00+09:00",
             "keyword": "case",
-            "searchType": "default_top",
+            "sortBy": "default",
             "productId": "W1",
             "rank": 2,
         },
@@ -91,6 +98,32 @@ def test_search_rank_history_keeps_same_product_at_different_ranks(tmp_path):
 
     assert len(payload["ranks"]) == 2
     assert [record["rank"] for record in payload["ranks"]] == [1, 2]
+
+
+def test_search_rank_history_migrates_legacy_records_to_sortby(tmp_path):
+    path = tmp_path / "ownerclan_2026_0822_0900_search-ranks.json"
+    atomic_write_json(
+        path,
+        {
+            "collectedAt": "2026-08-22T09:00:00+09:00",
+            "ranks": [
+                {
+                    "collectedAt": "2026-08-22T09:00:00+09:00",
+                    "keyword": "case",
+                    "searchType": "default_top",
+                    "sortBy": None,
+                    "productId": "W1",
+                    "productKey": "W1",
+                    "rank": 1,
+                }
+            ],
+        },
+    )
+
+    payload = append_search_ranks(path, [])
+
+    assert payload["ranks"][0]["sortBy"] == "default"
+    assert "searchType" not in payload["ranks"][0]
 
 
 def test_raw_samples_are_capped_at_three_products(tmp_path):
@@ -198,7 +231,44 @@ def test_incremental_item_limit_stops_after_requested_items(tmp_path):
     assert result["successCount"] == 1
     tracked = load_tracked_products(config.output.tracked_products_path)
     assert tracked["W1"]["keywords"] == []
-    assert tracked["W1"]["searchTypes"] == ["updated_date_range"]
+    assert "searchTypes" not in tracked["W1"]
+    assert tracked["W1"]["reasons"] == ["updated_date_range"]
+
+
+def test_migrate_sortby_schema_updates_stored_ownerclan_data(tmp_path):
+    data_dir = tmp_path / "data"
+    tracked_path = data_dir / "state" / "tracked_products.json"
+    rank_path = data_dir / "processed" / "ownerclan_2026_0822_0900_search-ranks.json"
+    atomic_write_json(
+        tracked_path,
+        {"W1": {"productId": "W1", "productKey": "W1", "keywords": ["case"], "searchTypes": ["default_top"], "reasons": []}},
+    )
+    atomic_write_json(
+        rank_path,
+        {
+            "collectedAt": "2026-08-22T09:00:00+09:00",
+            "ranks": [
+                {
+                    "collectedAt": "2026-08-22T09:00:00+09:00",
+                    "keyword": "case",
+                    "searchType": "default_top",
+                    "sortBy": None,
+                    "productId": "W1",
+                    "productKey": "W1",
+                    "rank": 1,
+                }
+            ],
+        },
+    )
+
+    stats = migrate_sortby_schema(data_dir)
+
+    assert stats == {"trackedFiles": 1, "rankFiles": 1}
+    tracked = load_json_object(tracked_path)
+    ranks = load_json_object(rank_path)["ranks"]
+    assert "searchTypes" not in tracked["W1"]
+    assert ranks[0]["sortBy"] == "default"
+    assert "searchType" not in ranks[0]
 
 
 def test_options_stock_status_normalization_and_source_specific_preserved():
