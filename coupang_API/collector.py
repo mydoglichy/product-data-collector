@@ -13,6 +13,7 @@ from .models import parse_product_records
 from .rate_limiter import RateLimiter
 from .storage import JsonlWriter, prune_raw_samples, save_raw_response, save_summary
 from .time_utils import output_file_stamp
+from product_history import append_collection_run, upsert_product_changes
 
 
 LOGGER = logging.getLogger("coupang_API")
@@ -36,6 +37,7 @@ def collect_once(project_root: Path, config: CollectorConfig) -> int:
     total_products = 0
     duplicate_products = 0
     raw_saved_count = 0
+    collected_products: dict[str, dict[str, object]] = {}
 
     LOGGER.info(
         "starting collection total=%d skipped_completed=%d pending=%d requests_per_minute=%d",
@@ -76,6 +78,10 @@ def collect_once(project_root: Path, config: CollectorConfig) -> int:
                 duplicates = len(records) - written
                 total_products += written
                 duplicate_products += duplicates
+                for record in records:
+                    product_id = record.get("productId")
+                    if product_id not in (None, ""):
+                        collected_products[str(product_id)] = record
                 checkpoint.mark_completed(keyword)
                 success_keywords.append(keyword)
                 LOGGER.info("success keyword=%r products=%d duplicates=%d", keyword, written, duplicates)
@@ -91,6 +97,27 @@ def collect_once(project_root: Path, config: CollectorConfig) -> int:
     if all_completed and not failure_keywords:
         checkpoint.clear()
     removed_raw_files = prune_raw_samples(project_root / "coupang_API" / "data" / "raw", config.raw_sample_limit)
+    data_dir = project_root / "coupang_API" / "data"
+    change_stats = upsert_product_changes(
+        platform="coupang",
+        current_path=data_dir / "state" / "latest-products.json",
+        history_path=data_dir / "history" / f"{run_stamp}_product-history.json",
+        collected_at=ended_at.isoformat().replace("+00:00", "Z"),
+        products=collected_products.values(),
+    )
+    append_collection_run(
+        data_dir / "state" / "collection-runs.json",
+        platform="coupang",
+        started_at=started_at.isoformat().replace("+00:00", "Z"),
+        ended_at=ended_at.isoformat().replace("+00:00", "Z"),
+        success=not failure_keywords,
+        queried_product_count=len(collected_products) + len(failure_keywords),
+        new_product_count=change_stats["newProductCount"],
+        changed_product_count=change_stats["changedProductCount"],
+        unchanged_product_count=change_stats["unchangedProductCount"],
+        failed_product_count=len(failure_keywords),
+        extra={"successKeywords": success_keywords, "failureKeywords": failure_keywords},
+    )
 
     summary = {
         "runStartedAt": started_at.isoformat().replace("+00:00", "Z"),
@@ -102,6 +129,9 @@ def collect_once(project_root: Path, config: CollectorConfig) -> int:
         "failureCount": len(failure_keywords),
         "collectedProductCount": total_products,
         "duplicateProductCount": duplicate_products,
+        "newProductCount": change_stats["newProductCount"],
+        "changedProductCount": change_stats["changedProductCount"],
+        "unchangedProductCount": change_stats["unchangedProductCount"],
         "rawSampleLimit": config.raw_sample_limit,
         "rawSavedCount": raw_saved_count,
         "removedRawFileCount": removed_raw_files,

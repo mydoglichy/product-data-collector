@@ -131,7 +131,7 @@ def test_collect_details_writes_latest_history_and_failures(tmp_path):
 
     assert result["successCount"] == 2
     latest = load_json_object(config.output.state_dir / "latest-products.json")
-    assert "rawSnapshots" not in latest["W1"]
+    assert "rawSnapshots" not in latest["products"]["ownerclan:W1"]["current"]
     snapshot_files = list(config.output.output_dir.glob("ownerclan_*_product-snapshots.json"))
     assert snapshot_files
     snapshot = load_json_object(snapshot_files[0])
@@ -270,10 +270,11 @@ def test_latest_products_do_not_store_raw_snapshots(tmp_path):
         )
 
     latest = load_json_object(latest_path)
-    assert "rawSnapshots" not in latest["W1"]
-    assert "raw" not in latest["W1"]
-    assert len(latest["W1"]["fingerprint"]) == 64
-    assert "content" not in latest["W1"]["fingerprint"]
+    record = latest["products"]["ownerclan:W1"]
+    assert "rawSnapshots" not in record["current"]
+    assert "raw" not in record["current"]
+    assert len(record["comparableFingerprint"]) == 64
+    assert "content" not in record["comparableFingerprint"]
 
 
 def test_load_json_object_accepts_utf8_bom(tmp_path):
