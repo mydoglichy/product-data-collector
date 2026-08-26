@@ -6,12 +6,18 @@ from coupang_API.storage import JsonlWriter, prune_raw_samples, save_raw_respons
 def test_same_product_id_history_is_preserved_across_collection_times(tmp_path):
     path = tmp_path / "history.jsonl"
     first = {
-        "api": {"productId": 1, "rank": 1, "productPrice": 1000},
-        "collector": {"requestedKeyword": "a", "collectedAt": "2026-08-21T00:00:00Z"},
+        "productId": 1,
+        "rank": 1,
+        "productPrice": 1000,
+        "keyword": "a",
+        "collectedAt": "2026-08-21T00:00:00Z",
     }
     second = {
-        "api": {"productId": 1, "rank": 2, "productPrice": 900},
-        "collector": {"requestedKeyword": "a", "collectedAt": "2026-08-21T01:00:00Z"},
+        "productId": 1,
+        "rank": 2,
+        "productPrice": 900,
+        "keyword": "a",
+        "collectedAt": "2026-08-21T01:00:00Z",
     }
 
     with JsonlWriter(path) as writer:
@@ -19,14 +25,17 @@ def test_same_product_id_history_is_preserved_across_collection_times(tmp_path):
 
     lines = path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 2
-    assert [json.loads(line)["api"]["productPrice"] for line in lines] == [1000, 900]
+    assert [json.loads(line)["productPrice"] for line in lines] == [1000, 900]
 
 
 def test_exact_duplicates_are_removed_within_same_run(tmp_path):
     path = tmp_path / "dedup.jsonl"
     record = {
-        "api": {"productId": 1, "rank": 1, "productPrice": 1000},
-        "collector": {"requestedKeyword": "a", "collectedAt": "2026-08-21T00:00:00Z"},
+        "productId": 1,
+        "rank": 1,
+        "productPrice": 1000,
+        "keyword": "a",
+        "collectedAt": "2026-08-21T00:00:00Z",
     }
 
     with JsonlWriter(path) as writer:

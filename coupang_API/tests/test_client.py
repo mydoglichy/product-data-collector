@@ -12,13 +12,13 @@ def test_normal_response_parsing():
             "landingUrl": "https://link.coupang.com/search",
             "productData": [
                 {
-                    "keyword": "선글라스 케이스",
+                    "keyword": "sunglasses case",
                     "rank": 1,
                     "isRocket": True,
                     "isFreeShipping": False,
                     "productId": 123,
                     "productImage": "https://image",
-                    "productName": "상품",
+                    "productName": "product",
                     "productPrice": 9900,
                     "productUrl": "https://link.coupang.com/product?itemId=456&vendorItemId=789",
                 }
@@ -26,29 +26,21 @@ def test_normal_response_parsing():
         },
     }
 
-    records = parse_product_records(payload, "선글라스 케이스", "2026-08-21T00:00:00Z")
+    records = parse_product_records(payload, "sunglasses case", "2026-08-21T00:00:00Z")
 
     assert records == [
         {
-            "api": {
-                "keyword": "선글라스 케이스",
-                "rank": 1,
-                "isRocket": True,
-                "isFreeShipping": False,
-                "productId": 123,
-                "itemId": "456",
-                "vendorItemId": "789",
-                "productImage": "https://image",
-                "productName": "상품",
-                "productPrice": 9900,
-                "productUrl": "https://link.coupang.com/product?itemId=456&vendorItemId=789",
-                "landingUrl": "https://link.coupang.com/search",
-            },
-            "collector": {
-                "requestedKeyword": "선글라스 케이스",
-                "collectedAt": "2026-08-21T00:00:00Z",
-                "source": "coupang_partners_product_search",
-            },
+            "productId": 123,
+            "itemId": "456",
+            "vendorItemId": "789",
+            "productName": "product",
+            "productPrice": 9900,
+            "productUrl": "https://link.coupang.com/product?itemId=456&vendorItemId=789",
+            "keyword": "sunglasses case",
+            "rank": 1,
+            "isRocket": True,
+            "isFreeShipping": False,
+            "collectedAt": "2026-08-21T00:00:00Z",
         }
     ]
 
@@ -87,20 +79,25 @@ def test_rcode_error_handling_from_client_response():
     )
 
     with pytest.raises(CoupangResponseError):
-        client.search_products(SearchRequest(keyword="선글라스 케이스"))
+        client.search_products(SearchRequest(keyword="sunglasses case"))
 
 
 def test_missing_fields_are_preserved_as_none_and_rank_falls_back_to_position():
     payload = {"rCode": "0", "rMessage": "OK", "data": {"productData": [{"productId": 1}]}}
 
-    records = parse_product_records(payload, "휴대용 안경집", "2026-08-21T00:00:00Z")
+    records = parse_product_records(payload, "wireless charger", "2026-08-21T00:00:00Z")
 
-    assert records[0]["api"]["productId"] == 1
-    assert records[0]["api"]["itemId"] is None
-    assert records[0]["api"]["vendorItemId"] is None
-    assert records[0]["api"]["rank"] == 1
-    assert records[0]["api"]["productName"] is None
-    assert records[0]["api"]["landingUrl"] is None
+    assert records[0]["productId"] == 1
+    assert records[0]["itemId"] is None
+    assert records[0]["vendorItemId"] is None
+    assert records[0]["rank"] == 1
+    assert records[0]["productName"] is None
+    assert records[0]["keyword"] == "wireless charger"
+    assert records[0]["collectedAt"] == "2026-08-21T00:00:00Z"
+    assert "landingUrl" not in records[0]
+    assert "productImage" not in records[0]
+    assert "requestedKeyword" not in records[0]
+    assert "collector" not in records[0]
 
 
 def test_numeric_product_price_string_is_cast_for_db_ready_record():
@@ -112,7 +109,7 @@ def test_numeric_product_price_string_is_cast_for_db_ready_record():
 
     records = parse_product_records(payload, "case", "2026-08-21T00:00:00Z")
 
-    assert records[0]["api"]["productPrice"] == 8250
+    assert records[0]["productPrice"] == 8250
 
 
 def test_limit_is_capped_at_official_maximum():
