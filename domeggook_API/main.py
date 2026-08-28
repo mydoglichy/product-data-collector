@@ -5,8 +5,9 @@ import logging
 import sys
 from pathlib import Path
 
+from .api_client import create_domeggook_client
 from .collect_product_details import collect_details
-from .config import find_project_root, load_config
+from .config import find_project_root, load_api_keys, load_config
 from .discover_products import discover
 from .logging_config import configure_logging
 from .storage import FileLock
@@ -17,9 +18,11 @@ LOGGER = logging.getLogger("domeggook_API")
 
 def run(project_root: Path, config_path: Path, *, limit: int | None = None, dry_run: bool = False) -> dict[str, dict[str, int]]:
     config = load_config(config_path)
+    api_keys = load_api_keys(project_root)
+    client = create_domeggook_client(api_keys, config)
     with FileLock(project_root / "domeggook_API" / "data" / "logs" / "collector.lock"):
-        discovery = discover(project_root, config, keyword_limit=limit, dry_run=dry_run)
-        details = collect_details(project_root, config, product_limit=limit, dry_run=dry_run)
+        discovery = discover(project_root, config, keyword_limit=limit, dry_run=dry_run, client=client)
+        details = collect_details(project_root, config, product_limit=limit, dry_run=dry_run, client=client)
     return {"discovery": discovery, "details": details}
 
 

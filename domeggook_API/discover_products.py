@@ -5,11 +5,10 @@ import logging
 import sys
 from pathlib import Path
 
-from .api_client import DomeggookApiError, DomeggookClient, ListRequest
-from .config import DomeggookConfig, find_project_root, load_api_key, load_config, load_keywords
+from .api_client import DomeggookApiError, DomeggookClient, ListRequest, create_domeggook_client
+from .config import DomeggookConfig, find_project_root, load_api_keys, load_config, load_keywords
 from .logging_config import configure_logging
 from .parsing import parse_list_items, parse_product_id
-from .rate_limiter import RateLimiter
 from .storage import append_search_ranks, load_tracked_products, merge_discovered_product, save_tracked_products
 from .time_utils import now_iso, output_file_stamp
 
@@ -30,13 +29,8 @@ def discover(
         keywords = keywords[:keyword_limit]
 
     if client is None:
-        api_key = load_api_key(project_root)
-        client = DomeggookClient(
-            api_key=api_key,
-            rate_limiter=RateLimiter(config.request.max_requests_per_minute),
-            timeout_seconds=config.request.timeout_seconds,
-            max_retries=config.request.max_retries,
-        )
+        api_keys = load_api_keys(project_root)
+        client = create_domeggook_client(api_keys, config)
 
     data_dir = project_root / "domeggook_API" / "data"
     tracked_path = data_dir / "state" / "tracked_products.json"

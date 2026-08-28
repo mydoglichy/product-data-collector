@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import cycle
+from threading import Lock
 from typing import Any
 from urllib.parse import urlencode
 
 import requests
 
-from .rate_limiter import RateLimiter
+from .config import DomeggookConfig
+from .rate_limiter import RateLimitWindow, RateLimiter
 
 
-BASE_URL = "https://domeggook.com/ssl/api/"
+BASE_URL = "https://www.domeggook.com/ssl/api/"
 LOGGER = logging.getLogger("domeggook_API.api_client")
 
 
@@ -40,17 +44,25 @@ class ListRequest:
     size: int
 
 
+@dataclass(frozen=True)
+class ApiCredential:
+    label: str
+    api_key: str
+    rate_limiter: RateLimiter
+
+
 class DomeggookClient:
     def __init__(
         self,
-        api_key: str,
-        rate_limiter: RateLimiter,
+        api_key: str | Sequence[str],
+        rate_limiter: RateLimiter | Sequence[RateLimiter],
         timeout_seconds: float = 20,
         max_retries: int = 3,
         session: requests.Session | None = None,
     ) -> None:
-        self._api_key = api_key
-        self._rate_limiter = rate_limiter
+        self._credentials = _build_credentials(api_key, rate_limiter)
+        self._credential_cycle = cycle(self._credentials)
+        self._credential_lock = Lock()
         self._timeout = timeout_seconds
         self._max_retries = max_retries
         self._session = session or requests.Session()
@@ -59,7 +71,6 @@ class DomeggookClient:
         params = {
             "ver": "4.1",
             "mode": "getItemList",
-            "aid": self._api_key,
             "market": request.market,
             "om": "json",
             "kw": request.keyword,
@@ -76,7 +87,6 @@ class DomeggookClient:
         params = {
             "ver": "4.6",
             "mode": "getItemView",
-            "aid": self._api_key,
             "om": "json",
             "no": ",".join(product_ids),
             "multiple": "true",
@@ -86,14 +96,22 @@ class DomeggookClient:
     def _get(self, params: dict[str, Any]) -> dict[str, Any]:
         attempts = self._max_retries + 1
         safe_params = {key: value for key, value in params.items() if key != "aid"}
+        credential = self._next_credential()
+        request_params = {**params, "aid": credential.api_key}
 
         for attempt in range(1, attempts + 1):
-            self._rate_limiter.wait()
-            url = f"{BASE_URL}?{urlencode(params)}"
+            credential.rate_limiter.wait()
+            url = f"{BASE_URL}?{urlencode(request_params)}"
             try:
                 response = self._session.get(url, timeout=self._timeout)
             except (requests.Timeout, requests.ConnectionError) as exc:
-                LOGGER.warning("network failure params=%s attempt=%d error=%s", safe_params, attempt, exc.__class__.__name__)
+                LOGGER.warning(
+                    "network failure key=%s params=%s attempt=%d error=%s",
+                    credential.label,
+                    safe_params,
+                    attempt,
+                    exc.__class__.__name__,
+                )
                 if attempt >= attempts:
                     raise DomeggookApiError(f"network error: {exc.__class__.__name__}") from exc
                 time.sleep(min(2 ** (attempt - 1), 30))
@@ -101,12 +119,18 @@ class DomeggookClient:
 
             if response.status_code == 429 and attempt < attempts:
                 retry_after = _retry_after_seconds(response.headers.get("Retry-After"))
-                LOGGER.warning("rate limited params=%s attempt=%d status=429", safe_params, attempt)
+                LOGGER.warning("rate limited key=%s params=%s attempt=%d status=429", credential.label, safe_params, attempt)
                 time.sleep(retry_after if retry_after is not None else min(2 ** (attempt - 1), 30))
                 continue
 
             if 500 <= response.status_code < 600 and attempt < attempts:
-                LOGGER.warning("server error params=%s attempt=%d status=%d", safe_params, attempt, response.status_code)
+                LOGGER.warning(
+                    "server error key=%s params=%s attempt=%d status=%d",
+                    credential.label,
+                    safe_params,
+                    attempt,
+                    response.status_code,
+                )
                 time.sleep(min(2 ** (attempt - 1), 30))
                 continue
 
@@ -121,6 +145,59 @@ class DomeggookClient:
             return payload
 
         raise DomeggookApiError("request failed after retries")
+
+    def _next_credential(self) -> ApiCredential:
+        with self._credential_lock:
+            return next(self._credential_cycle)
+
+
+def create_domeggook_client(
+    api_keys: Sequence[str],
+    config: DomeggookConfig,
+    session: requests.Session | None = None,
+) -> DomeggookClient:
+    return DomeggookClient(
+        api_key=api_keys,
+        rate_limiter=[create_api_key_rate_limiter(config) for _ in api_keys],
+        timeout_seconds=config.request.timeout_seconds,
+        max_retries=config.request.max_retries,
+        session=session,
+    )
+
+
+def create_api_key_rate_limiter(config: DomeggookConfig) -> RateLimiter:
+    return RateLimiter(
+        config.request.max_requests_per_minute,
+        windows=[
+            RateLimitWindow(config.request.max_requests_per_minute, 60.0),
+            RateLimitWindow(config.request.max_requests_per_hour, 60.0 * 60.0),
+            RateLimitWindow(config.request.max_requests_per_day, 60.0 * 60.0 * 24.0),
+        ],
+    )
+
+
+def _build_credentials(
+    api_key: str | Sequence[str],
+    rate_limiter: RateLimiter | Sequence[RateLimiter],
+) -> list[ApiCredential]:
+    api_keys = [api_key] if isinstance(api_key, str) else list(api_key)
+    if not api_keys:
+        raise ValueError("api_key must contain at least one key")
+
+    rate_limiters = [rate_limiter] if isinstance(rate_limiter, RateLimiter) else list(rate_limiter)
+    if len(rate_limiters) == 1 and len(api_keys) > 1:
+        template = rate_limiters[0]
+        rate_limiters = [
+            RateLimiter(template.max_calls, template.period_seconds, windows=list(template.windows))
+            for _ in api_keys
+        ]
+    if len(rate_limiters) != len(api_keys):
+        raise ValueError("rate_limiter count must match api_key count")
+
+    return [
+        ApiCredential(label=f"KEY_{index}", api_key=key, rate_limiter=limiter)
+        for index, (key, limiter) in enumerate(zip(api_keys, rate_limiters), start=1)
+    ]
 
 
 def _retry_after_seconds(value: str | None) -> float | None:
