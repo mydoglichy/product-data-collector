@@ -8,30 +8,50 @@ class FakeClient:
     def __init__(self):
         self.list_requests = []
         self.detail_requests = []
+        self.category_requests = 0
 
     def get_item_list(self, request):
         self.list_requests.append(request)
         return {"domeggook": {"list": {"item": [{"no": "100"}, {"no": "200"}]}}}
 
+    def get_category_list(self):
+        self.category_requests += 1
+        return {
+            "domeggook": {
+                "items": {
+                    "item": [
+                        {
+                            "code": "01_00_00_00_00",
+                            "name": "parent",
+                            "child": {"item": [{"code": "01_01_00_00_00", "name": "bag"}]},
+                        }
+                    ]
+                }
+            }
+        }
+
     def get_item_view(self, product_ids):
         self.detail_requests.append(product_ids)
-        return {"domeggook": {"item": [{"no": product_id, "title": f"상품 {product_id}"} for product_id in product_ids]}}
+        return {"domeggook": {"item": [{"no": product_id, "title": f"product {product_id}"} for product_id in product_ids]}}
 
 
 def test_discover_uses_all_market_and_sort_combinations_without_real_api(tmp_path):
     api_dir = tmp_path / "domeggook_API"
     api_dir.mkdir()
-    (api_dir / "keywords.txt").write_text("안경 케이스\n", encoding="utf-8")
     client = FakeClient()
     config = _config()
 
     result = discover(tmp_path, config, client=client)
 
+    assert client.category_requests == 1
     assert len(client.list_requests) == 4
+    assert {request.category_code for request in client.list_requests} == {"01_01_00_00_00"}
+    assert result["categoryCount"] == 1
     assert result["discoveredCount"] == 8
     assert result["newProductCount"] == 2
     tracked = load_tracked_products(api_dir / "data" / "state" / "tracked_products.json")
     assert set(tracked) == {"100", "200"}
+    assert tracked["100"]["keywords"] == ["bag"]
     assert tracked["100"]["markets"] == ["dome", "supply"]
     assert tracked["100"]["reasons"] == ["popular", "recent"]
 
@@ -66,4 +86,3 @@ def _config():
         ),
         timezone="Asia/Seoul",
     )
-

@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 
 from .api_client import DomeggookApiError, DomeggookClient, ListRequest, create_domeggook_client
-from .config import DomeggookConfig, find_project_root, load_api_keys, load_config, load_keywords
+from .categories import load_or_refresh_categories
+from .config import DomeggookConfig, find_project_root, load_api_keys, load_config
 from .logging_config import configure_logging
 from .parsing import parse_list_items, parse_product_id
 from .storage import append_search_ranks, load_tracked_products, merge_discovered_product, save_tracked_products
@@ -24,15 +25,15 @@ def discover(
     dry_run: bool = False,
     client: DomeggookClient | None = None,
 ) -> dict[str, int]:
-    keywords = load_keywords(project_root / "domeggook_API" / "keywords.txt")
-    if keyword_limit is not None:
-        keywords = keywords[:keyword_limit]
-
     if client is None:
         api_keys = load_api_keys(project_root)
         client = create_domeggook_client(api_keys, config)
 
     data_dir = project_root / "domeggook_API" / "data"
+    categories = load_or_refresh_categories(data_dir / "state" / "categories.json", client, dry_run=dry_run)
+    if keyword_limit is not None:
+        categories = categories[:keyword_limit]
+
     tracked_path = data_dir / "state" / "tracked_products.json"
     tracked = load_tracked_products(tracked_path)
     search_rank_records: list[dict[str, object]] = []
@@ -40,37 +41,54 @@ def discover(
     new_products = 0
     failures = 0
 
-    for keyword in keywords:
+    for category in categories:
         for market in config.discovery.markets:
             for reason, sort_code in config.discovery.sorts.items():
                 collected_at = now_iso(config.timezone)
                 try:
                     payload = client.get_item_list(
                         ListRequest(
-                            keyword=keyword,
                             market=market,
                             sort=sort_code,
                             size=config.discovery.items_per_keyword,
+                            category_code=category.code,
                         )
                     )
                     items = parse_list_items(payload)
                 except DomeggookApiError as exc:
                     failures += 1
-                    LOGGER.error("failed list keyword=%r market=%s sort=%s error=%s", keyword, market, sort_code, exc)
+                    LOGGER.error(
+                        "failed list category=%s category_name=%r market=%s sort=%s error=%s",
+                        category.code,
+                        category.name,
+                        market,
+                        sort_code,
+                        exc,
+                    )
                     continue
 
                 for rank, item in enumerate(items, start=1):
                     product_id = parse_product_id(item)
                     if not product_id:
-                        LOGGER.warning("list item missing product id keyword=%r market=%s sort=%s rank=%d", keyword, market, sort_code, rank)
+                        LOGGER.warning(
+                            "list item missing product id category=%s category_name=%r market=%s sort=%s rank=%d",
+                            category.code,
+                            category.name,
+                            market,
+                            sort_code,
+                            rank,
+                        )
                         continue
                     discovered += 1
-                    if merge_discovered_product(tracked, product_id, keyword, market, reason, collected_at):
+                    if merge_discovered_product(tracked, product_id, category.name, market, reason, collected_at):
                         new_products += 1
                     search_rank_records.append(
                         {
                             "collectedAt": collected_at,
-                            "keyword": keyword,
+                            "keyword": category.name,
+                            "categoryCode": category.code,
+                            "categoryName": category.name,
+                            "categoryPath": list(category.path),
                             "market": market,
                             "sort": sort_code,
                             "reason": reason,
@@ -87,7 +105,7 @@ def discover(
         )
 
     return {
-        "keywordCount": len(keywords),
+        "categoryCount": len(categories),
         "discoveredCount": discovered,
         "newProductCount": new_products,
         "trackedCount": len(tracked),
@@ -96,9 +114,9 @@ def discover(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Discover Domeggook/Domeme product ids from keyword searches.")
+    parser = argparse.ArgumentParser(description="Discover Domeggook/Domeme product ids from category searches.")
     parser.add_argument("--config", default=None)
-    parser.add_argument("--limit", type=int, default=None, help="Limit keywords for a small real API run.")
+    parser.add_argument("--limit", type=int, default=None, help="Limit categories for a small real API run.")
     parser.add_argument("--dry-run", action="store_true", help="Call API but do not write data files.")
     args = parser.parse_args(argv)
 

@@ -49,6 +49,29 @@
 }
 ```
 
+## `data/state/categories.json`
+
+도매꾹 공식 `getCategoryList` 응답을 7일 캐시로 보관한 카테고리 검색 입력입니다.
+대분류는 상품목록 검색 대상에서 제외하고, 중분류 이하 카테고리만 `categories[]`에 저장합니다.
+DB 연동 시 `code`를 카테고리 자연키로 쓰고 `path`를 별도 계층/표시 컬럼으로 분리할 수 있습니다.
+
+```json
+{
+  "generatedAt": "ISO-8601 datetime",
+  "source": "domeggook",
+  "categories": [
+    {
+      "code": "string",
+      "name": "string",
+      "depth": "number",
+      "path": ["string"],
+      "intCode": "number | null",
+      "locked": "string | null"
+    }
+  ]
+}
+```
+
 상품 상세 snapshot에는 공급사 원본 키워드, 이미지 URL, 상세문구 HTML, raw 응답을 저장하지 않습니다. 검색에 사용한 키워드와 순위는 `search-ranks.json`에만 저장합니다.
 
 ## `data/processed/domeggook_YYYY_MMDD_HHMM_product-snapshots.json`
@@ -70,4 +93,4 @@
 검색 순위 기록입니다.
 
 - `collectedAt`: 마지막 rank 레코드의 수집 시각
-- `ranks[]`: `collectedAt`, `keyword`, `market`, `sort`, `reason`, `productId`, `rank`
+- `ranks[]`: `collectedAt`, `keyword`, `categoryCode`, `categoryName`, `categoryPath`, `market`, `sort`, `reason`, `productId`, `rank`

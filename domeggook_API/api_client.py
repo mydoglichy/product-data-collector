@@ -38,10 +38,11 @@ class DomeggookResponseError(DomeggookApiError):
 
 @dataclass(frozen=True)
 class ListRequest:
-    keyword: str
     market: str
     sort: str
     size: int
+    keyword: str | None = None
+    category_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -68,15 +69,20 @@ class DomeggookClient:
         self._session = session or requests.Session()
 
     def get_item_list(self, request: ListRequest) -> dict[str, Any]:
+        if not request.keyword and not request.category_code:
+            raise ValueError("ListRequest requires keyword or category_code")
         params = {
             "ver": "4.1",
             "mode": "getItemList",
             "market": request.market,
             "om": "json",
-            "kw": request.keyword,
             "so": request.sort,
             "sz": request.size,
         }
+        if request.keyword:
+            params["kw"] = request.keyword
+        if request.category_code:
+            params["ca"] = request.category_code
         return self._get(params)
 
     def get_item_view(self, product_ids: list[str]) -> dict[str, Any]:
@@ -90,6 +96,14 @@ class DomeggookClient:
             "om": "json",
             "no": ",".join(product_ids),
             "multiple": "true",
+        }
+        return self._get(params)
+
+    def get_category_list(self) -> dict[str, Any]:
+        params = {
+            "ver": "1.0",
+            "mode": "getCategoryList",
+            "om": "json",
         }
         return self._get(params)
 
