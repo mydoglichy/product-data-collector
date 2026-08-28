@@ -5,11 +5,10 @@ import logging
 import sys
 from pathlib import Path
 
-from .api_client import DomeggookApiError, DomeggookClient
-from .config import DomeggookConfig, find_project_root, load_api_key, load_config
+from .api_client import DomeggookApiError, DomeggookClient, create_domeggook_client
+from .config import DomeggookConfig, find_project_root, load_api_keys, load_config
 from .logging_config import configure_logging
 from .parsing import parse_detail_products
-from .rate_limiter import RateLimiter
 from product_history import append_collection_run
 
 from .storage import (
@@ -42,13 +41,8 @@ def collect_details(
         product_ids = product_ids[:product_limit]
 
     if client is None:
-        api_key = load_api_key(project_root)
-        client = DomeggookClient(
-            api_key=api_key,
-            rate_limiter=RateLimiter(config.request.max_requests_per_minute),
-            timeout_seconds=config.request.timeout_seconds,
-            max_retries=config.request.max_retries,
-        )
+        api_keys = load_api_keys(project_root)
+        client = create_domeggook_client(api_keys, config)
 
     collected_at = now_iso(config.timezone)
     started_at = collected_at

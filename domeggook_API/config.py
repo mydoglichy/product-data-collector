@@ -10,9 +10,12 @@ from dotenv import load_dotenv
 
 
 OFFICIAL_RATE_LIMIT_PER_MINUTE = 180
+OFFICIAL_RATE_LIMIT_PER_DAY = 15000
 OFFICIAL_LIST_MAX_SIZE = 100
 OFFICIAL_DETAIL_MAX_BATCH_SIZE = 100
 DEFAULT_REQUESTS_PER_MINUTE = 120
+DEFAULT_REQUESTS_PER_HOUR = 9000
+DEFAULT_REQUESTS_PER_DAY = 14000
 
 
 @dataclass(frozen=True)
@@ -31,6 +34,8 @@ class DetailsConfig:
 @dataclass(frozen=True)
 class RequestConfig:
     max_requests_per_minute: int
+    max_requests_per_hour: int
+    max_requests_per_day: int
     timeout_seconds: float
     max_retries: int
 
@@ -87,6 +92,18 @@ def load_config(path: Path) -> DomeggookConfig:
             f"request.max_requests_per_minute must be between 1 and {OFFICIAL_RATE_LIMIT_PER_MINUTE - 1}"
         )
 
+    max_hourly_requests = int(request.get("max_requests_per_hour", DEFAULT_REQUESTS_PER_HOUR))
+    if max_hourly_requests < max_requests:
+        raise ValueError("request.max_requests_per_hour must be greater than or equal to max_requests_per_minute")
+
+    max_daily_requests = int(request.get("max_requests_per_day", DEFAULT_REQUESTS_PER_DAY))
+    if not 1 <= max_daily_requests < OFFICIAL_RATE_LIMIT_PER_DAY:
+        raise ValueError(
+            f"request.max_requests_per_day must be between 1 and {OFFICIAL_RATE_LIMIT_PER_DAY - 1}"
+        )
+    if max_daily_requests < max_hourly_requests:
+        raise ValueError("request.max_requests_per_day must be greater than or equal to max_requests_per_hour")
+
     timeout = float(request.get("timeout_seconds", 20))
     if timeout <= 0:
         raise ValueError("request.timeout_seconds must be greater than zero")
@@ -98,7 +115,13 @@ def load_config(path: Path) -> DomeggookConfig:
     return DomeggookConfig(
         discovery=DiscoveryConfig(markets=markets, sorts=sorts, items_per_keyword=items_per_keyword),
         details=DetailsConfig(batch_size=batch_size, raw_sample_limit=raw_sample_limit),
-        request=RequestConfig(max_requests_per_minute=max_requests, timeout_seconds=timeout, max_retries=max_retries),
+        request=RequestConfig(
+            max_requests_per_minute=max_requests,
+            max_requests_per_hour=max_hourly_requests,
+            max_requests_per_day=max_daily_requests,
+            timeout_seconds=timeout,
+            max_retries=max_retries,
+        ),
         timezone=str(payload.get("timezone") or "Asia/Seoul"),
     )
 
@@ -121,12 +144,31 @@ def load_keywords(path: Path) -> list[str]:
     return keywords
 
 
-def load_api_key(project_root: Path) -> str:
+def load_api_keys(project_root: Path) -> list[str]:
     load_dotenv(project_root / ".env", override=False)
-    api_key = os.getenv("DOMEGGOOK_API_KEY")
-    if not api_key:
-        raise RuntimeError("missing required environment variable: DOMEGGOOK_API_KEY")
-    return api_key
+    numbered_keys = (os.getenv("DOMEGGOOK_API_KEY_1"), os.getenv("DOMEGGOOK_API_KEY_2"))
+    if any(numbered_keys):
+        missing = [
+            name
+            for name, value in (("DOMEGGOOK_API_KEY_1", numbered_keys[0]), ("DOMEGGOOK_API_KEY_2", numbered_keys[1]))
+            if not value
+        ]
+        if missing:
+            raise RuntimeError(f"missing required environment variable(s): {', '.join(missing)}")
+        return [key for key in numbered_keys if key is not None]
+
+    legacy_api_key = os.getenv("DOMEGGOOK_API_KEY")
+    if legacy_api_key:
+        return [legacy_api_key]
+
+    raise RuntimeError(
+        "missing required environment variable: DOMEGGOOK_API_KEY_1 and DOMEGGOOK_API_KEY_2 "
+        "(legacy fallback: DOMEGGOOK_API_KEY)"
+    )
+
+
+def load_api_key(project_root: Path) -> str:
+    return load_api_keys(project_root)[0]
 
 
 def find_project_root(start: Path) -> Path:
