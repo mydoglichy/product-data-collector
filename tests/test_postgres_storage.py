@@ -99,11 +99,20 @@ def test_snapshot_row_splits_domeggook_market_prices_and_shipping() -> None:
         {"market": "retail", "price_type": "minimum_retail", "amount": 900},
         {"market": "retail", "price_type": "recommended_retail", "amount": 1000},
     ]
-    assert row["shipping_fee"] is None
-    assert row["shipping_rows"] == [
-        {"market": "dome", "fee": None, "shipping_type": "수량별비례"},
-        {"market": "supply", "fee": 3000, "shipping_type": "고정배송비"},
-    ]
+    assert row["shipping_fee"] == 3000
+    assert row["shipping_rows"][0]["market"] == "dome"
+    assert row["shipping_rows"][0]["fee"] == 3000
+    assert row["shipping_rows"][0]["shipping_type"] == "quantity_proportional"
+    assert row["shipping_rows"][0]["shipping_fee_raw"] == "100+3000|100+3000"
+    assert row["shipping_rows"][0]["shipping_fee_type_raw"] == "수량별비례"
+    assert row["shipping_rows"][0]["additional_fee"] == 3000
+    assert row["shipping_rows"][0]["payload"]["domeFee"] == "100+3000|100+3000"
+    assert row["shipping_rows"][0]["payload"]["shipping_fee"] == 3000
+    assert row["shipping_rows"][1]["market"] == "supply"
+    assert row["shipping_rows"][1]["fee"] == 3000
+    assert row["shipping_rows"][1]["shipping_type"] == "fixed"
+    assert row["shipping_rows"][1]["shipping_fee_raw"] == 3000
+    assert row["shipping_rows"][1]["shipping_fee_type_raw"] == "고정배송비"
 
 
 def test_snapshot_row_keeps_zero_shipping_distinct_from_missing_fee() -> None:
@@ -130,6 +139,33 @@ def test_snapshot_row_keeps_zero_shipping_distinct_from_missing_fee() -> None:
     assert missing_row is not None
     assert free_row["shipping_rows"][0]["fee"] == 0
     assert missing_row["shipping_rows"][0]["fee"] is None
+
+
+def test_snapshot_row_parses_shipping_payment_separately_from_fee() -> None:
+    row = _snapshot_row(
+        "domeggook",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "collect",
+            "shipping": {
+                "feePayer": "B",
+                "domeFee": "1+3500|20+5500",
+                "domeFeeType": "수량별차등",
+            },
+        },
+    )
+
+    assert row is not None
+    shipping = row["shipping_rows"][0]
+    assert shipping["fee"] == 3500
+    assert shipping["shipping_type"] == "quantity_tiered"
+    assert shipping["shipping_payment"] == "collect"
+    assert shipping["payload"]["shipping_payment"] == "collect"
+    assert shipping["payload"]["shipping_fee_raw"] == "1+3500|20+5500"
+    assert shipping["shipping_rules"] == [
+        {"min_quantity": 1, "fee": 3500},
+        {"min_quantity": 20, "fee": 5500},
+    ]
 
 
 def test_save_product_snapshots_if_enabled_skips_when_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

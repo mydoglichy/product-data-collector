@@ -179,7 +179,7 @@ ownerclan_API/data/
 domeggook_API/data/
 ```
 
-## Local PostgreSQL + pgvector
+## Local PostgreSQL
 
 Local DB settings are read from `.env`.
 
@@ -204,7 +204,5 @@ Verify the connection and create the schema:
 python scripts/test_postgres_connection.py
 ```
 
-The schema enables `pgvector` and creates `products`, `product_prices`,
-`product_inventory`, `product_shipping_fees`, `product_change_history`, and
-`product_embeddings`. Embedding rows are prepared with a nullable
-`vector(1536)` column; no embedding model is called by the collector.
+The schema creates `products`, `product_prices`, `product_inventory`,
+`product_shipping_fees`, and `product_change_history`.
