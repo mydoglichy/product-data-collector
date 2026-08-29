@@ -374,6 +374,9 @@ def test_numeric_ownerclan_strings_are_cast_for_db_ready_fields():
     item["shippingFee"] = "3,000"
     item["boxQuantity"] = "12"
     item["guaranteedShippingPeriod"] = "2"
+    item["metadata"]["certificateInformation"] = [{"type": "KC", "code": "ABC"}]
+    item["metadata"]["grade"] = "GOLD1"
+    item["metadata"]["gradeDetail"] = {"averageShip": "GOOD"}
 
     product = normalize_item(item, "2026-08-24T00:00:00+09:00")
 
@@ -386,6 +389,9 @@ def test_numeric_ownerclan_strings_are_cast_for_db_ready_fields():
     assert product["shipping"]["fee"] == 3000
     assert product["sourceSpecific"]["boxQuantity"] == 12
     assert product["sourceSpecific"]["guaranteedShippingPeriod"] == 2
+    assert product["sourceSpecific"]["certificateInformation"] == [{"type": "KC", "code": "ABC"}]
+    assert product["sourceSpecific"]["grade"] == "GOLD1"
+    assert product["sourceSpecific"]["gradeDetail"] == {"averageShip": "GOOD"}
 
 
 def _config(tmp_path: Path):

@@ -69,6 +69,69 @@ def test_snapshot_row_preserves_falsy_inventory_and_shipping_values() -> None:
     assert row["is_free_shipping"] is False
 
 
+def test_snapshot_row_splits_domeggook_market_prices_and_shipping() -> None:
+    row = _snapshot_row(
+        "domeggook",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "11291544",
+            "prices": {
+                "domeCurrentSupplyPrice": "10+650|100+620",
+                "supplyCurrentSupplyPrice": 680,
+                "minimumRetailPrice": 900,
+                "recommendedRetailPrice": 1000,
+            },
+            "shipping": {
+                "domeFee": "100+3000|100+3000",
+                "domeFeeType": "수량별비례",
+                "supplyFee": 3000,
+                "supplyFeeType": "고정배송비",
+            },
+        },
+    )
+
+    assert row is not None
+    assert row["primary_price"] is None
+    assert row["prices_payload"]["domeCurrentSupplyPrice"] == "10+650|100+620"
+    assert row["price_rows"] == [
+        {"market": "dome", "price_type": "current_supply", "amount": None},
+        {"market": "supply", "price_type": "current_supply", "amount": 680},
+        {"market": "retail", "price_type": "minimum_retail", "amount": 900},
+        {"market": "retail", "price_type": "recommended_retail", "amount": 1000},
+    ]
+    assert row["shipping_fee"] is None
+    assert row["shipping_rows"] == [
+        {"market": "dome", "fee": None, "shipping_type": "수량별비례"},
+        {"market": "supply", "fee": 3000, "shipping_type": "고정배송비"},
+    ]
+
+
+def test_snapshot_row_keeps_zero_shipping_distinct_from_missing_fee() -> None:
+    free_row = _snapshot_row(
+        "ownerclan",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "free",
+            "prices": {"currentSupplyPrice": 1000},
+            "shipping": {"fee": 0, "type": "free"},
+        },
+    )
+    missing_row = _snapshot_row(
+        "ownerclan",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "missing",
+            "prices": {"currentSupplyPrice": 1000},
+            "shipping": {"fee": None, "type": "unknown"},
+        },
+    )
+
+    assert free_row is not None
+    assert missing_row is not None
+    assert free_row["shipping_rows"][0]["fee"] == 0
+    assert missing_row["shipping_rows"][0]["fee"] is None
+
+
 def test_save_product_snapshots_if_enabled_skips_when_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POSTGRES_ENABLED", "false")
 
