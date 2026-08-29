@@ -13,6 +13,7 @@ from .models import parse_product_records
 from .rate_limiter import RateLimiter
 from .storage import JsonlWriter, prune_raw_samples, save_raw_response, save_summary
 from .time_utils import output_file_stamp
+from postgres_storage import save_product_snapshots_if_enabled
 from product_history import append_collection_run, upsert_product_changes
 
 
@@ -104,6 +105,13 @@ def collect_once(project_root: Path, config: CollectorConfig) -> int:
         history_path=data_dir / "history" / f"{run_stamp}_product-history.json",
         collected_at=ended_at.isoformat().replace("+00:00", "Z"),
         products=collected_products.values(),
+    )
+    save_product_snapshots_if_enabled(
+        project_root=project_root,
+        platform="coupang",
+        collected_at=ended_at.isoformat().replace("+00:00", "Z"),
+        products=collected_products.values(),
+        logger=LOGGER,
     )
     append_collection_run(
         data_dir / "state" / "collection-runs.json",

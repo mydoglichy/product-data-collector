@@ -9,6 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from product_history import append_collection_run
+from postgres_storage import save_product_snapshots_if_enabled
 
 from .client import OwnerclanGraphQLError
 from .config import OwnerclanConfig, find_project_root, load_config
@@ -150,6 +151,13 @@ def sync_incremental(
             history_path=data_dir / "history" / f"{file_stamp}_product-history.json",
             collected_at=collected_at,
             products=(_without_raw(product) for product in products),
+        )
+        save_product_snapshots_if_enabled(
+            project_root=project_root,
+            platform="ownerclan",
+            collected_at=collected_at,
+            products=(_without_raw(product) for product in products),
+            logger=LOGGER,
         )
         if histories:
             save_state(data_dir / "history" / f"{file_stamp}_item-histories.json", {"collectedAt": collected_at, "histories": histories})

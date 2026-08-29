@@ -178,3 +178,33 @@ coupang_API/data/
 ownerclan_API/data/
 domeggook_API/data/
 ```
+
+## Local PostgreSQL + pgvector
+
+Local DB settings are read from `.env`.
+
+```env
+POSTGRES_ENABLED=true
+POSTGRES_HOST=127.0.0.1
+POSTGRES_PORT=5432
+POSTGRES_DB=product_data_collector
+POSTGRES_USER=collector
+POSTGRES_PASSWORD=replace_with_local_password
+```
+
+Start PostgreSQL and the collector container together:
+
+```powershell
+docker compose up -d postgres data-collector
+```
+
+Verify the connection and create the schema:
+
+```powershell
+python scripts/test_postgres_connection.py
+```
+
+The schema enables `pgvector` and creates `products`, `product_prices`,
+`product_inventory`, `product_shipping_fees`, `product_change_history`, and
+`product_embeddings`. Embedding rows are prepared with a nullable
+`vector(1536)` column; no embedding model is called by the collector.
