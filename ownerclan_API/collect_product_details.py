@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from product_history import append_collection_run
+from postgres_storage import save_product_snapshots_if_enabled
 
 from .client import OwnerclanGraphQLError
 from .config import OwnerclanConfig, find_project_root, load_config
@@ -87,6 +88,13 @@ def collect_details(
             history_path=data_dir / "history" / f"{file_stamp}_product-history.json",
             collected_at=collected_at,
             products=(_without_raw(product) for product in unique_products.values()),
+        )
+        save_product_snapshots_if_enabled(
+            project_root=project_root,
+            platform="ownerclan",
+            collected_at=collected_at,
+            products=(_without_raw(product) for product in unique_products.values()),
+            logger=LOGGER,
         )
         if failures:
             save_failures(data_dir / "summaries" / f"{file_stamp}_failures.json", collected_at, failures)
