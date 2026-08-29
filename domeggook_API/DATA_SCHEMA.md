@@ -1,96 +1,49 @@
-# Domeggook API Data Schema
+# 도매꾹/도매매 데이터 스키마
 
-도매꾹/도매매 API 수집 결과의 파일 구조입니다. DB 적재 기준은 `data/processed/*_product-snapshots.json`의 `products[]`와 `data/processed/*_search-ranks.json`의 `ranks[]`입니다.
+도매꾹/도매매 Open API 응답은 `parse_detail_product()`에서 공통 상품 구조로 정규화한 뒤 PostgreSQL에 저장한다.
 
-## 파일명 규칙
+## PostgreSQL 매핑
 
-런타임 결과 파일은 `domeggook_YYYY_MMDD_HHMM_역할.json` 형식을 사용합니다.
+| PostgreSQL | source |
+| --- | --- |
+| `products.platform` | `domeggook` |
+| `products.external_product_id` | `productId` |
+| `product_prices.market='dome'` | `prices.domeCurrentSupplyPrice` |
+| `product_prices.market='supply'` | `prices.supplyCurrentSupplyPrice` |
+| `product_prices.market='retail'` | `minimumRetailPrice`, `recommendedRetailPrice` |
+| `product_inventory.stock_quantity` | `qty.inventory` |
+| `product_shipping_fees.market='dome'` | `shipping.domeFee` / `shipping.domeFeeRaw` |
+| `product_shipping_fees.market='supply'` | `shipping.supplyFee` / `shipping.supplyFeeRaw` |
+| `product_raw_samples.payload` | raw 디버깅 샘플 |
+| `product_search_ranks` | category, market, sort, rank |
 
-- 예: `domeggook_2026_0825_1810_product-snapshots.json`
-- 예: `domeggook_2026_0825_1810_search-ranks.json`
+## 배송비
 
-시각은 `config.yaml`의 `timezone` 기준입니다. `data/state/tracked_products.json`은 다음 실행이 계속 읽는 상태 파일이므로 고정 이름을 유지합니다.
+도매꾹/도매매 배송비는 별도 row로 저장한다.
 
-## `data/state/tracked_products.json`
+- 도매꾹: `market='dome'`
+- 도매매: `market='supply'`
 
-상품번호별 추적 마스터입니다.
+배송비 부담 방식은 `shipping.feePayer`에서 정규화되어 `product_shipping_fees.payload.shipping_payment`에 보존된다.
 
-```json
-{
-  "{productId}": {
-    "productId": "string",
-    "keywords": ["string"],
-    "markets": ["dome | supply"],
-    "reasons": ["popular | recent"],
-    "firstSeenAt": "ISO-8601 datetime",
-    "lastSeenAt": "ISO-8601 datetime",
-    "active": "boolean"
-  }
-}
-```
+## 재고
 
-## Normalized Product
+현재 API 문서와 parser 기준으로 재고는 `qty.inventory` 하나다. `domeInventory`나 `supplyInventory`처럼 시장별 재고 필드는 사용하지 않는다.
 
-상품 상세 snapshot의 `products[]`에 들어가는 정규화 상품 구조입니다.
+시장별 주문 조건은 별도 필드로 보존한다.
 
-```json
-{
-  "source": "domeggook",
-  "productId": "string | null",
-  "collectedAt": "ISO-8601 datetime",
-  "status": "string | null",
-  "productName": "string | null",
-  "prices": {},
-  "inventory": {},
-  "shipping": {},
-  "seller": {},
-  "category": {},
-  "sourceSpecific": {}
-}
-```
+- `inventory.domeMoq`
+- `inventory.domeMaxOrderQuantity`
+- `inventory.domeOrderUnit`
+- `inventory.supplyOrderUnit`
 
-## `data/state/categories.json`
+## raw 샘플
 
-도매꾹 공식 `getCategoryList` 응답을 7일 캐시로 보관한 카테고리 검색 입력입니다.
-대분류는 상품목록 검색 대상에서 제외하고, 중분류 이하 카테고리만 `categories[]`에 저장합니다.
-DB 연동 시 `code`를 카테고리 자연키로 쓰고 `path`를 별도 계층/표시 컬럼으로 분리할 수 있습니다.
+예전 `data/raw/domeggook_*_raw.json` 파일은 더 이상 생성하지 않는다. raw 샘플은 `product_raw_samples`에 저장하고, 저장 호출당 최대 3개 상품으로 제한한다.
 
-```json
-{
-  "generatedAt": "ISO-8601 datetime",
-  "source": "domeggook",
-  "categories": [
-    {
-      "code": "string",
-      "name": "string",
-      "depth": "number",
-      "path": ["string"],
-      "intCode": "number | null",
-      "locked": "string | null"
-    }
-  ]
-}
-```
+## 파일 기반 상태
 
-상품 상세 snapshot에는 공급사 원본 키워드, 이미지 URL, 상세문구 HTML, raw 응답을 저장하지 않습니다. 검색에 사용한 키워드와 순위는 `search-ranks.json`에만 저장합니다.
+- `data/state/categories.json`
+- `data/state/tracked_products.json`
 
-## `data/processed/domeggook_YYYY_MMDD_HHMM_product-snapshots.json`
-
-상품 상세 snapshot입니다.
-
-- `collectedAt`: 저장 시각
-- `successCount`: `products[]` 개수
-- `failureCount`: `failures[]` 개수
-- `products[]`: 상품별 정규화 상세 데이터
-- `failures[]`: 실패 상품 또는 요청 정보
-
-## `data/raw/domeggook_YYYY_MMDD_HHMM_raw.json`
-
-원본 API 응답 샘플입니다. 항상 최대 3개 상품만 저장하며, 이미지 URL, 상세문구, 공급사 원본 키워드는 제거한 축약본입니다.
-
-## `data/processed/domeggook_YYYY_MMDD_HHMM_search-ranks.json`
-
-검색 순위 기록입니다.
-
-- `collectedAt`: 마지막 rank 레코드의 수집 시각
-- `ranks[]`: `collectedAt`, `keyword`, `categoryCode`, `categoryName`, `categoryPath`, `market`, `sort`, `reason`, `productId`, `rank`
+이 파일들은 실행 입력/캐시이며 상품 결과 저장소가 아니다.

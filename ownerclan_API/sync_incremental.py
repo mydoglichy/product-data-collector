@@ -8,8 +8,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from product_history import append_collection_run
-from postgres_storage import save_product_snapshots_if_enabled
+from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
 
 from .client import OwnerclanGraphQLError
 from .config import OwnerclanConfig, find_project_root, load_config
@@ -20,15 +19,11 @@ from .queries import all_items_query, item_histories_query
 from .storage import (
     load_state,
     merge_discovered_product,
-    merge_product_snapshots,
-    save_failures,
-    save_raw_samples,
     save_state,
     save_tracked_products,
     load_tracked_products,
-    update_latest_and_history,
 )
-from .time_utils import now_iso, output_file_stamp, to_unix_millis
+from .time_utils import now_iso, to_unix_millis
 
 
 LOGGER = logging.getLogger("ownerclan_API.sync_incremental")
@@ -131,26 +126,13 @@ def sync_incremental(
             if key:
                 merge_discovered_product(tracked, key, None, "updated_date_range", collected_at)
         save_tracked_products(config.output.tracked_products_path, tracked)
-        output_dir = config.output.output_dir
-        data_dir = output_dir.parent
-        file_stamp = output_file_stamp("ownerclan", config.timezone)
-        save_raw_samples(
-            data_dir / "raw" / f"{file_stamp}_raw.json",
-            collected_at,
-            products,
-            config.output.raw_sample_limit,
-        )
-        merge_product_snapshots(
-            output_dir / f"{file_stamp}_product-snapshots.json",
-            collected_at,
-            (_without_raw(product) for product in products),
-            failures,
-        )
-        change_stats = update_latest_and_history(
-            latest_path=config.output.state_dir / "latest-products.json",
-            history_path=data_dir / "history" / f"{file_stamp}_product-history.json",
+        save_product_raw_samples_if_enabled(
+            project_root=project_root,
+            platform="ownerclan",
             collected_at=collected_at,
-            products=(_without_raw(product) for product in products),
+            products=products,
+            limit=config.output.raw_sample_limit,
+            logger=LOGGER,
         )
         save_product_snapshots_if_enabled(
             project_root=project_root,
@@ -159,26 +141,9 @@ def sync_incremental(
             products=(_without_raw(product) for product in products),
             logger=LOGGER,
         )
-        if histories:
-            save_state(data_dir / "history" / f"{file_stamp}_item-histories.json", {"collectedAt": collected_at, "histories": histories})
-        if failures:
-            save_failures(data_dir / "summaries" / f"{file_stamp}_failures.json", collected_at, failures)
         if completed and not failures:
             state["lastSuccessfulItemSyncAt"] = date_to_iso
             save_state(state_path, state)
-        append_collection_run(
-            config.output.state_dir / "collection-runs.json",
-            platform="ownerclan",
-            started_at=date_from_iso,
-            ended_at=now_iso(config.timezone),
-            success=completed and not failures,
-            queried_product_count=len(products) + len(failures),
-            new_product_count=change_stats["newProductCount"],
-            changed_product_count=change_stats["changedProductCount"],
-            unchanged_product_count=change_stats["unchangedProductCount"],
-            failed_product_count=len(failures),
-            extra={"syncType": "incremental", "pageCount": pages},
-        )
 
     return {
         "pageCount": pages,

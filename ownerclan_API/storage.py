@@ -4,12 +4,8 @@ import copy
 import json
 import os
 import time
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
-
-from product_history import upsert_product_changes
-
 
 class FileLock:
     def __init__(self, path: Path, stale_after_seconds: float = 12 * 60 * 60) -> None:
@@ -110,124 +106,6 @@ def active_product_keys(tracked: dict[str, dict[str, Any]]) -> list[str]:
     return sorted(str(key) for key, record in tracked.items() if record.get("active", True))
 
 
-def append_search_ranks(path: Path, records: Iterable[dict[str, Any]]) -> dict[str, Any]:
-    payload = load_json_object(path, {"collectedAt": None, "ranks": []})
-    ranks = [_normalize_rank_record(record) for record in payload.get("ranks", []) if isinstance(record, dict)]
-    seen = {_rank_key(record) for record in ranks if isinstance(record, dict)}
-    for record in records:
-        normalized = _normalize_rank_record(record)
-        key = _rank_key(normalized)
-        if key in seen:
-            continue
-        seen.add(key)
-        ranks.append(normalized)
-    result = {"collectedAt": ranks[-1].get("collectedAt") if ranks else payload.get("collectedAt"), "ranks": ranks}
-    atomic_write_json(path, result)
-    return result
-
-
-def migrate_sortby_schema(data_dir: Path) -> dict[str, int]:
-    stats = {"trackedFiles": 0, "rankFiles": 0}
-    tracked_path = data_dir / "state" / "tracked_products.json"
-    if tracked_path.exists():
-        save_tracked_products(tracked_path, load_tracked_products(tracked_path))
-        stats["trackedFiles"] += 1
-
-    for path in sorted((data_dir / "processed").glob("*_search-ranks.json")):
-        append_search_ranks(path, [])
-        stats["rankFiles"] += 1
-    return stats
-
-
-def merge_product_snapshots(
-    path: Path,
-    collected_at: str,
-    products: Iterable[dict[str, Any]],
-    failures: Iterable[dict[str, Any]],
-) -> dict[str, Any]:
-    existing = load_json_object(path, {"products": [], "failures": []})
-    by_product_id: dict[str, dict[str, Any]] = {}
-    for record in existing.get("products", []):
-        if isinstance(record, dict) and record.get("productId") is not None:
-            by_product_id[str(record["productId"])] = record
-    for product in products:
-        product_id = product.get("productId")
-        if product_id is not None:
-            by_product_id[str(product_id)] = product
-
-    failure_records = [failure for failure in existing.get("failures", []) if isinstance(failure, dict)]
-    failure_seen = {json.dumps(failure, ensure_ascii=False, sort_keys=True) for failure in failure_records}
-    for failure in failures:
-        key = json.dumps(failure, ensure_ascii=False, sort_keys=True)
-        if key not in failure_seen:
-            failure_seen.add(key)
-            failure_records.append(failure)
-    merged_products = sorted(by_product_id.values(), key=lambda record: str(record.get("productId")))
-    payload = {
-        "collectedAt": collected_at,
-        "successCount": len(merged_products),
-        "failureCount": len(failure_records),
-        "products": merged_products,
-        "failures": failure_records,
-    }
-    atomic_write_json(path, payload)
-    return payload
-
-
-def save_raw_samples(
-    path: Path,
-    collected_at: str,
-    products: Iterable[dict[str, Any]],
-    limit: int,
-) -> dict[str, Any]:
-    if limit < 0:
-        raise ValueError("limit must be zero or greater")
-    limit = min(limit, 3)
-    items: list[dict[str, Any]] = []
-    for product in products:
-        if len(items) >= limit:
-            break
-        raw = product.get("raw")
-        if raw is None:
-            continue
-        items.append(
-            {
-                "productId": product.get("productId"),
-                "productKey": product.get("productKey"),
-                "raw": raw,
-            }
-        )
-    payload = {"collectedAt": collected_at, "items": items}
-    atomic_write_json(path, payload)
-    return payload
-
-
-def update_latest_and_history(
-    *,
-    latest_path: Path,
-    history_path: Path,
-    collected_at: str,
-    products: Iterable[dict[str, Any]],
-) -> dict[str, int]:
-    stats = upsert_product_changes(
-        platform="ownerclan",
-        current_path=latest_path,
-        history_path=history_path,
-        collected_at=collected_at,
-        products=products,
-    )
-    latest = load_json_object(latest_path, {"products": {}})
-    latest_products = latest.get("products") if isinstance(latest.get("products"), dict) else {}
-    return {"latestCount": len(latest_products), "changedCount": stats["newProductCount"] + stats["changedProductCount"], **stats}
-
-
-def save_failures(path: Path, collected_at: str, failures: Iterable[dict[str, Any]]) -> None:
-    payload = load_json_object(path, {"collectedAt": None, "failures": []})
-    records = payload.get("failures") if isinstance(payload.get("failures"), list) else []
-    records.extend(failures)
-    atomic_write_json(path, {"collectedAt": collected_at, "failures": records})
-
-
 def load_state(path: Path) -> dict[str, Any]:
     return load_json_object(path)
 
@@ -253,23 +131,4 @@ def _normalize_tracked_product(record: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(record)
     normalized.pop("searchTypes", None)
     return normalized
-
-
-def _normalize_rank_record(record: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(record)
-    normalized.pop("searchType", None)
-    if normalized.get("sortBy") is None:
-        normalized["sortBy"] = "default"
-    return normalized
-
-
-def _rank_key(record: dict[str, Any]) -> tuple[str, str, str, str, str]:
-    return (
-        str(record.get("collectedAt")),
-        str(record.get("keyword")),
-        str(record.get("sortBy")),
-        str(record.get("productId")),
-        str(record.get("rank")),
-    )
-
 

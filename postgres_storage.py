@@ -151,6 +151,37 @@ def init_schema(connection: Connection[Any]) -> None:
             CONSTRAINT product_shipping_fees_product_collected_market_key UNIQUE (product_id, collected_at, market)
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS product_raw_samples (
+            id BIGSERIAL PRIMARY KEY,
+            platform TEXT NOT NULL,
+            external_product_id TEXT NOT NULL,
+            collected_at TIMESTAMPTZ NOT NULL,
+            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT product_raw_samples_platform_collected_product_key UNIQUE (platform, collected_at, external_product_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS product_search_ranks (
+            id BIGSERIAL PRIMARY KEY,
+            platform TEXT NOT NULL,
+            collected_at TIMESTAMPTZ NOT NULL,
+            keyword TEXT NULL,
+            category_code TEXT NULL,
+            category_name TEXT NULL,
+            category_path JSONB NOT NULL DEFAULT '[]'::jsonb,
+            market TEXT NOT NULL DEFAULT 'default',
+            sort TEXT NOT NULL DEFAULT '',
+            reason TEXT NULL,
+            external_product_id TEXT NOT NULL,
+            rank INTEGER NOT NULL,
+            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT product_search_ranks_platform_collected_market_sort_product_rank_key
+                UNIQUE (platform, collected_at, market, sort, external_product_id, rank)
+        )
+        """,
         "ALTER TABLE product_prices ADD COLUMN IF NOT EXISTS market TEXT NOT NULL DEFAULT 'default'",
         "ALTER TABLE product_shipping_fees ADD COLUMN IF NOT EXISTS market TEXT NOT NULL DEFAULT 'default'",
         "ALTER TABLE product_prices DROP CONSTRAINT IF EXISTS product_prices_product_id_collected_at_price_type_key",
@@ -362,6 +393,8 @@ def init_schema(connection: Connection[Any]) -> None:
         "CREATE INDEX IF NOT EXISTS idx_product_prices_product_collected_at ON product_prices(product_id, collected_at)",
         "CREATE INDEX IF NOT EXISTS idx_product_inventory_product_collected_at ON product_inventory(product_id, collected_at)",
         "CREATE INDEX IF NOT EXISTS idx_product_shipping_fees_product_collected_at ON product_shipping_fees(product_id, collected_at)",
+        "CREATE INDEX IF NOT EXISTS idx_product_raw_samples_platform_collected_at ON product_raw_samples(platform, collected_at)",
+        "CREATE INDEX IF NOT EXISTS idx_product_search_ranks_platform_collected_at ON product_search_ranks(platform, collected_at)",
     )
     with connection.cursor() as cursor:
         for statement in statements:
@@ -410,6 +443,148 @@ def save_product_snapshots_if_enabled(
     if logger is not None:
         logger.info("saved PostgreSQL product snapshots count=%d", saved_count)
     return saved_count
+
+
+def save_product_raw_samples_if_enabled(
+    *,
+    project_root: Path,
+    platform: str,
+    collected_at: str,
+    products: Iterable[dict[str, Any]],
+    limit: int,
+    logger: logging.Logger | None = None,
+) -> int:
+    if not postgres_enabled(project_root):
+        return 0
+    if limit < 0:
+        raise ValueError("limit must be zero or greater")
+
+    rows: list[dict[str, Any]] = []
+    for product in products:
+        if len(rows) >= min(limit, 3):
+            break
+        raw = product.get("raw")
+        external_id = external_product_id(product)
+        if raw is None or not external_id:
+            continue
+        rows.append(
+            {
+                "platform": platform,
+                "external_product_id": external_id,
+                "collected_at": _parse_datetime(collected_at),
+                "payload": raw,
+            }
+        )
+    if not rows:
+        return 0
+
+    config = load_postgres_config(project_root)
+    with connect(config) as connection:
+        init_schema(connection)
+        for row in rows:
+            connection.execute(
+                """
+                INSERT INTO product_raw_samples (platform, external_product_id, collected_at, payload)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (platform, collected_at, external_product_id) DO UPDATE SET
+                    payload = EXCLUDED.payload
+                """,
+                (
+                    row["platform"],
+                    row["external_product_id"],
+                    row["collected_at"],
+                    Jsonb(_json_safe(row["payload"])),
+                ),
+            )
+        connection.commit()
+    if logger is not None:
+        logger.info("saved PostgreSQL raw samples count=%d", len(rows))
+    return len(rows)
+
+
+def save_search_ranks_if_enabled(
+    *,
+    project_root: Path,
+    platform: str,
+    records: Iterable[dict[str, Any]],
+    logger: logging.Logger | None = None,
+) -> int:
+    if not postgres_enabled(project_root):
+        return 0
+
+    rows: list[dict[str, Any]] = []
+    for record in records:
+        product_id = record.get("productId")
+        collected_at = record.get("collectedAt")
+        if product_id in (None, "") or collected_at in (None, ""):
+            continue
+        rows.append(
+            {
+                "platform": platform,
+                "collected_at": _parse_datetime(str(collected_at)),
+                "keyword": _text_or_none(record.get("keyword")),
+                "category_code": _text_or_none(record.get("categoryCode")),
+                "category_name": _text_or_none(record.get("categoryName")),
+                "category_path": record.get("categoryPath") if isinstance(record.get("categoryPath"), list) else [],
+                "market": _text_or_none(record.get("market")) or "default",
+                "sort": _text_or_none(record.get("sort") or record.get("sortBy")) or "",
+                "reason": _text_or_none(record.get("reason")),
+                "external_product_id": str(product_id),
+                "rank": int(record.get("rank") or 0),
+                "payload": record,
+            }
+        )
+    if not rows:
+        return 0
+
+    config = load_postgres_config(project_root)
+    with connect(config) as connection:
+        init_schema(connection)
+        for row in rows:
+            connection.execute(
+                """
+                INSERT INTO product_search_ranks (
+                    platform,
+                    collected_at,
+                    keyword,
+                    category_code,
+                    category_name,
+                    category_path,
+                    market,
+                    sort,
+                    reason,
+                    external_product_id,
+                    rank,
+                    payload
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (platform, collected_at, market, sort, external_product_id, rank) DO UPDATE SET
+                    keyword = EXCLUDED.keyword,
+                    category_code = EXCLUDED.category_code,
+                    category_name = EXCLUDED.category_name,
+                    category_path = EXCLUDED.category_path,
+                    reason = EXCLUDED.reason,
+                    payload = EXCLUDED.payload
+                """,
+                (
+                    row["platform"],
+                    row["collected_at"],
+                    row["keyword"],
+                    row["category_code"],
+                    row["category_name"],
+                    Jsonb(_json_safe(row["category_path"])),
+                    row["market"],
+                    row["sort"],
+                    row["reason"],
+                    row["external_product_id"],
+                    row["rank"],
+                    Jsonb(_json_safe(row["payload"])),
+                ),
+            )
+        connection.commit()
+    if logger is not None:
+        logger.info("saved PostgreSQL search ranks count=%d", len(rows))
+    return len(rows)
 
 
 def _save_snapshot(connection: Connection[Any], row: dict[str, Any]) -> None:

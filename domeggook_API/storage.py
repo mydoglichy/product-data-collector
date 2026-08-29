@@ -3,11 +3,8 @@ from __future__ import annotations
 import json
 import os
 import time
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
-
-from product_history import upsert_product_changes
 
 
 class FileLock:
@@ -109,122 +106,10 @@ def save_tracked_products(path: Path, tracked: dict[str, dict[str, Any]]) -> Non
     atomic_write_json(path, tracked)
 
 
-def append_search_ranks(path: Path, records: Iterable[dict[str, Any]]) -> dict[str, Any]:
-    existing = _load_or_default(path, {"collectedAt": None, "ranks": []})
-    ranks = existing.get("ranks") if isinstance(existing, dict) else []
-    if not isinstance(ranks, list):
-        ranks = []
-    seen = {_rank_key(record) for record in ranks if isinstance(record, dict)}
-    for record in records:
-        key = _rank_key(record)
-        if key in seen:
-            continue
-        seen.add(key)
-        ranks.append(record)
-    collected_at = ranks[-1].get("collectedAt") if ranks and isinstance(ranks[-1], dict) else existing.get("collectedAt")
-    payload = {"collectedAt": collected_at, "ranks": ranks}
-    atomic_write_json(path, payload)
-    return payload
-
-
-def merge_product_snapshots(
-    path: Path,
-    collected_at: str,
-    products: Iterable[dict[str, Any]],
-    failures: Iterable[dict[str, Any]],
-) -> dict[str, Any]:
-    existing = _load_or_default(path, {"products": [], "failures": []})
-    by_product_id: dict[str, dict[str, Any]] = {}
-    for record in existing.get("products", []):
-        if isinstance(record, dict) and record.get("productId") is not None:
-            by_product_id[str(record["productId"])] = record
-    for record in products:
-        product_id = record.get("productId")
-        if product_id is None:
-            continue
-        by_product_id[str(product_id)] = record
-
-    failure_records = [failure for failure in existing.get("failures", []) if isinstance(failure, dict)]
-    failure_seen = {json.dumps(failure, ensure_ascii=False, sort_keys=True) for failure in failure_records}
-    for failure in failures:
-        key = json.dumps(failure, ensure_ascii=False, sort_keys=True)
-        if key in failure_seen:
-            continue
-        failure_seen.add(key)
-        failure_records.append(failure)
-
-    merged_products = sorted(by_product_id.values(), key=lambda record: str(record.get("productId")))
-    payload = {
-        "collectedAt": collected_at,
-        "successCount": len(merged_products),
-        "failureCount": len(failure_records),
-        "products": merged_products,
-        "failures": failure_records,
-    }
-    atomic_write_json(path, payload)
-    return payload
-
-
-def save_raw_samples(
-    path: Path,
-    collected_at: str,
-    products: Iterable[dict[str, Any]],
-    limit: int,
-) -> dict[str, Any]:
-    if limit < 0:
-        raise ValueError("limit must be zero or greater")
-    limit = min(limit, 3)
-    items: list[dict[str, Any]] = []
-    for product in products:
-        if len(items) >= limit:
-            break
-        raw = product.get("raw")
-        if raw is None:
-            continue
-        items.append({"productId": product.get("productId"), "raw": raw})
-    payload = {"collectedAt": collected_at, "items": items}
-    atomic_write_json(path, payload)
-    return payload
-
-
-def update_latest_and_history(
-    *,
-    latest_path: Path,
-    history_path: Path,
-    collected_at: str,
-    products: Iterable[dict[str, Any]],
-) -> dict[str, int]:
-    stats = upsert_product_changes(
-        platform="domeggook",
-        current_path=latest_path,
-        history_path=history_path,
-        collected_at=collected_at,
-        products=products,
-    )
-    latest = _load_or_default(latest_path, {"products": {}})
-    latest_products = latest.get("products") if isinstance(latest.get("products"), dict) else {}
-    return {"latestCount": len(latest_products), "changedCount": stats["newProductCount"] + stats["changedProductCount"], **stats}
-
-
-def save_failures(path: Path, collected_at: str, failures: Iterable[dict[str, Any]]) -> None:
-    payload = _load_or_default(path, {"collectedAt": None, "failures": []})
-    records = payload.get("failures") if isinstance(payload.get("failures"), list) else []
-    records.extend(failures)
-    atomic_write_json(path, {"collectedAt": collected_at, "failures": records})
-
-
 def chunked(values: list[str], size: int) -> list[list[str]]:
     if size < 1:
         raise ValueError("size must be greater than zero")
     return [values[index : index + size] for index in range(0, len(values), size)]
-
-
-def _load_or_default(path: Path, default: dict[str, Any]) -> dict[str, Any]:
-    if not path.exists():
-        return default
-    with path.open("r", encoding="utf-8") as fp:
-        payload = json.load(fp)
-    return payload if isinstance(payload, dict) else default
 
 
 def _append_unique(values: Any, value: str) -> list[str]:
@@ -232,15 +117,4 @@ def _append_unique(values: Any, value: str) -> list[str]:
     if value not in result:
         result.append(value)
     return result
-
-
-def _rank_key(record: dict[str, Any]) -> tuple[str, str, str, str, str, str]:
-    return (
-        str(record.get("collectedAt")),
-        str(record.get("keyword")),
-        str(record.get("market")),
-        str(record.get("sort")),
-        str(record.get("productId")),
-        str(record.get("rank")),
-    )
 

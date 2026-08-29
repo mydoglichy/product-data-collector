@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 from ownerclan_API.client import OwnerclanGraphQLError
 from ownerclan_API.collect_product_details import collect_details, fetch_items_batch
@@ -13,13 +13,9 @@ from ownerclan_API.config import (
 from ownerclan_API.discover_products import discover
 from ownerclan_API.normalization import calculate_total_stock, normalize_item, normalize_options
 from ownerclan_API.storage import (
-    append_search_ranks,
     atomic_write_json,
     load_json_object,
     load_tracked_products,
-    migrate_sortby_schema,
-    save_raw_samples,
-    update_latest_and_history,
 )
 from ownerclan_API.sync_incremental import sync_incremental
 
@@ -57,8 +53,20 @@ def test_keyword_default_and_new_search_and_dedupes_product_keys(tmp_path):
     config = _config(tmp_path)
     config.discovery.keyword_file.write_text("case\ncase\n", encoding="utf-8")
     client = FakeClient()
+    saved_ranks = []
 
-    result = discover(tmp_path, config, client=client)
+    def save_ranks(**kwargs):
+        saved_ranks.extend(kwargs["records"])
+        return len(saved_ranks)
+
+    import ownerclan_API.discover_products as discover_module
+    original = discover_module.save_search_ranks_if_enabled
+    discover_module.save_search_ranks_if_enabled = save_ranks
+
+    try:
+        result = discover(tmp_path, config, client=client)
+    finally:
+        discover_module.save_search_ranks_if_enabled = original
 
     assert result["discoveredCount"] == 4
     assert result["newProductCount"] == 2
@@ -69,70 +77,10 @@ def test_keyword_default_and_new_search_and_dedupes_product_keys(tmp_path):
     assert set(tracked) == {"W1", "W2"}
     assert "searchTypes" not in tracked["W1"]
     assert tracked["W1"]["reasons"] == ["default", "registerDateDesc"]
-    rank_files = list(config.output.output_dir.glob("ownerclan_*_search-ranks.json"))
-    ranks = load_json_object(rank_files[0])["ranks"]
+    assert not list(config.output.output_dir.glob("ownerclan_*_search-ranks.json"))
+    ranks = saved_ranks
     assert {record["sortBy"] for record in ranks} == {"default", "registerDateDesc"}
     assert all("searchType" not in record for record in ranks)
-
-
-def test_search_rank_history_keeps_same_product_at_different_ranks(tmp_path):
-    path = tmp_path / "ownerclan_2026_0822_0900_search-ranks.json"
-    records = [
-        {
-            "collectedAt": "2026-08-22T09:00:00+09:00",
-            "keyword": "case",
-            "sortBy": "default",
-            "productId": "W1",
-            "rank": 1,
-        },
-        {
-            "collectedAt": "2026-08-22T09:00:00+09:00",
-            "keyword": "case",
-            "sortBy": "default",
-            "productId": "W1",
-            "rank": 2,
-        },
-    ]
-
-    payload = append_search_ranks(path, records + [records[0]])
-
-    assert len(payload["ranks"]) == 2
-    assert [record["rank"] for record in payload["ranks"]] == [1, 2]
-
-
-def test_search_rank_history_migrates_legacy_records_to_sortby(tmp_path):
-    path = tmp_path / "ownerclan_2026_0822_0900_search-ranks.json"
-    atomic_write_json(
-        path,
-        {
-            "collectedAt": "2026-08-22T09:00:00+09:00",
-            "ranks": [
-                {
-                    "collectedAt": "2026-08-22T09:00:00+09:00",
-                    "keyword": "case",
-                    "searchType": "default_top",
-                    "sortBy": None,
-                    "productId": "W1",
-                    "productKey": "W1",
-                    "rank": 1,
-                }
-            ],
-        },
-    )
-
-    payload = append_search_ranks(path, [])
-
-    assert payload["ranks"][0]["sortBy"] == "default"
-    assert "searchType" not in payload["ranks"][0]
-
-
-def test_raw_samples_are_capped_at_three_products(tmp_path):
-    path = tmp_path / "raw.json"
-    products = [{"productId": f"W{index}", "productKey": f"W{index}", "raw": {"key": f"W{index}"}} for index in range(5)]
-
-    payload = save_raw_samples(path, "2026-08-22T09:00:00+09:00", products, 20)
-
-    assert [item["productId"] for item in payload["items"]] == ["W0", "W1", "W2"]
 
 
 def test_multiple_item_query_falls_back_to_items_by_keys_then_single_item():
@@ -155,26 +103,34 @@ def test_multiple_item_query_falls_back_to_items_by_keys_then_single_item():
     assert len(client.calls) == 3
 
 
-def test_collect_details_writes_latest_history_and_failures(tmp_path):
+def test_collect_details_saves_products_to_postgres_without_json_outputs(tmp_path):
     config = _config(tmp_path)
     atomic_write_json(config.output.tracked_products_path, {"W1": {"productId": "W1", "active": True}})
     client = FakeClient()
+    saved = {"raw": [], "snapshots": []}
 
-    result = collect_details(tmp_path, config, client=client)
+    import ownerclan_API.collect_product_details as collect_module
+    original_raw = collect_module.save_product_raw_samples_if_enabled
+    original_snapshots = collect_module.save_product_snapshots_if_enabled
+    collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: saved["raw"].append(kwargs) or 1
+    collect_module.save_product_snapshots_if_enabled = lambda **kwargs: saved["snapshots"].append(kwargs) or 1
+
+    try:
+        result = collect_details(tmp_path, config, client=client)
+    finally:
+        collect_module.save_product_raw_samples_if_enabled = original_raw
+        collect_module.save_product_snapshots_if_enabled = original_snapshots
 
     assert result["successCount"] == 2
-    latest = load_json_object(config.output.state_dir / "latest-products.json")
-    assert "rawSnapshots" not in latest["products"]["ownerclan:W1"]["current"]
-    snapshot_files = list(config.output.output_dir.glob("ownerclan_*_product-snapshots.json"))
-    assert snapshot_files
-    snapshot = load_json_object(snapshot_files[0])
-    assert "raw" not in snapshot["products"][0]
-    raw_files = list((config.output.output_dir.parent / "raw").glob("ownerclan_*_raw.json"))
-    assert raw_files
-    raw_payload = load_json_object(raw_files[0])
-    assert raw_payload["items"]
-    history_files = list((config.output.output_dir.parent / "history").glob("ownerclan_*_product-history.json"))
-    assert history_files
+    assert len(saved["raw"]) == 1
+    assert len(saved["snapshots"]) == 1
+    saved_products = list(saved["snapshots"][0]["products"])
+    assert saved_products
+    assert all("raw" not in product for product in saved_products)
+    assert not (config.output.state_dir / "latest-products.json").exists()
+    assert not list(config.output.output_dir.glob("ownerclan_*_product-snapshots.json"))
+    assert not list((config.output.output_dir.parent / "raw").glob("ownerclan_*_raw.json"))
+    assert not list((config.output.output_dir.parent / "history").glob("ownerclan_*_product-history.json"))
 
 
 def test_cursor_pagination_and_repeated_cursor_stops(tmp_path):
@@ -235,48 +191,12 @@ def test_incremental_item_limit_stops_after_requested_items(tmp_path):
     assert tracked["W1"]["reasons"] == ["updated_date_range"]
 
 
-def test_migrate_sortby_schema_updates_stored_ownerclan_data(tmp_path):
-    data_dir = tmp_path / "data"
-    tracked_path = data_dir / "state" / "tracked_products.json"
-    rank_path = data_dir / "processed" / "ownerclan_2026_0822_0900_search-ranks.json"
-    atomic_write_json(
-        tracked_path,
-        {"W1": {"productId": "W1", "productKey": "W1", "keywords": ["case"], "searchTypes": ["default_top"], "reasons": []}},
-    )
-    atomic_write_json(
-        rank_path,
-        {
-            "collectedAt": "2026-08-22T09:00:00+09:00",
-            "ranks": [
-                {
-                    "collectedAt": "2026-08-22T09:00:00+09:00",
-                    "keyword": "case",
-                    "searchType": "default_top",
-                    "sortBy": None,
-                    "productId": "W1",
-                    "productKey": "W1",
-                    "rank": 1,
-                }
-            ],
-        },
-    )
-
-    stats = migrate_sortby_schema(data_dir)
-
-    assert stats == {"trackedFiles": 1, "rankFiles": 1}
-    tracked = load_json_object(tracked_path)
-    ranks = load_json_object(rank_path)["ranks"]
-    assert "searchTypes" not in tracked["W1"]
-    assert ranks[0]["sortBy"] == "default"
-    assert "searchType" not in ranks[0]
-
-
 def test_options_stock_status_normalization_and_source_specific_preserved():
     item = _item(
         "W9",
         options=[
             {"optionAttributes": [], "price": 1000, "quantity": 2},
-            {"optionAttributes": [{"name": "색상", "value": "검정"}], "price": 1200, "quantity": "3"},
+            {"optionAttributes": [{"name": "color", "value": "black"}], "price": 1200, "quantity": "3"},
         ],
     )
     item["status"] = "unavailable"
@@ -287,7 +207,7 @@ def test_options_stock_status_normalization_and_source_specific_preserved():
     product = normalize_item(item, "2026-08-24T00:00:00+09:00")
 
     assert product["options"][0]["skuType"] == "default"
-    assert product["options"][1]["optionAttributes"] == [{"name": "색상", "value": "검정"}]
+    assert product["options"][1]["optionAttributes"] == [{"name": "color", "value": "black"}]
     assert product["inventory"]["stockQuantity"] == 5
     assert product["inventory"]["stockQuantitySource"] == "sum(options[].quantity)"
     assert product["status"] == "unavailable"
@@ -302,15 +222,15 @@ def test_metadata_content_keywords_and_images_are_not_saved():
         "vendorKey": "V1",
         "productNotificationInformation": {
             "categorySpecific": [
-                "상품 상세정보에 별도 표기",
-                "상품 상세정보에 별도 표기",
-                "판매자 연락처 참고",
+                "?곹뭹 ?곸꽭?뺣낫??蹂꾨룄 ?쒓린",
+                "?곹뭹 ?곸꽭?뺣낫??蹂꾨룄 ?쒓린",
+                "?먮ℓ???곕씫泥?李멸퀬",
             ],
             "common": [
-                "상품 상세정보에 별도 표기",
-                "상품 상세정보에 별도 표기",
-                "상품 상세정보에 별도 표기",
-                "상품 상세정보에 별도 표기",
+                "?곹뭹 ?곸꽭?뺣낫??蹂꾨룄 ?쒓린",
+                "?곹뭹 ?곸꽭?뺣낫??蹂꾨룄 ?쒓린",
+                "?곹뭹 ?곸꽭?뺣낫??蹂꾨룄 ?쒓린",
+                "?곹뭹 ?곸꽭?뺣낫??蹂꾨룄 ?쒓린",
             ],
         },
     }
@@ -325,26 +245,6 @@ def test_metadata_content_keywords_and_images_are_not_saved():
     assert "content" not in product["raw"]
     assert "searchKeywords" not in product["raw"]
     assert "images" not in product["raw"]
-
-
-def test_latest_products_do_not_store_raw_snapshots(tmp_path):
-    latest_path = tmp_path / "latest.json"
-    history_path = tmp_path / "history.json"
-    for index in range(5):
-        product = normalize_item(_item("W1", name=f"상품{index}"), f"2026-08-24T00:00:0{index}+09:00")
-        update_latest_and_history(
-            latest_path=latest_path,
-            history_path=history_path,
-            collected_at=product["collectedAt"],
-            products=[product],
-        )
-
-    latest = load_json_object(latest_path)
-    record = latest["products"]["ownerclan:W1"]
-    assert "rawSnapshots" not in record["current"]
-    assert "raw" not in record["current"]
-    assert len(record["comparableFingerprint"]) == 64
-    assert "content" not in record["comparableFingerprint"]
 
 
 def test_load_json_object_accepts_utf8_bom(tmp_path):
@@ -420,7 +320,7 @@ def _item(key, *, name=None, updated_at="2026-08-24T00:00:00+09:00", options=Non
         "updatedAt": updated_at,
         "key": key,
         "id": f"id-{key}",
-        "name": name or f"상품 {key}",
+        "name": name or f"?곹뭹 {key}",
         "model": "M",
         "production": "Maker",
         "origin": "KR",
