@@ -182,6 +182,33 @@ def test_detail_parser_keeps_zero_false_and_known_raw_aliases():
     assert product["seller"]["reviewCount"] == 122
 
 
+def test_detail_parser_preserves_shipping_fee_raw_values_and_deli_who():
+    payload = {
+        "domeggook": {
+            "item": [
+                {
+                    "no": "12345678",
+                    "deli": {
+                        "who": "P",
+                        "dome": {"tbl": "100+3000|100+3000", "type": "수량별비례"},
+                        "supply": {"fee": "3,000", "type": "고정배송비"},
+                    },
+                }
+            ]
+        }
+    }
+
+    products, failures = parse_detail_products(payload, "2026-08-22T09:00:00+09:00")
+
+    assert failures == []
+    product = products[0]
+    assert product["shipping"]["feePayer"] == "P"
+    assert product["shipping"]["domeFee"] == "100+3000|100+3000"
+    assert product["shipping"]["domeFeeRaw"] == "100+3000|100+3000"
+    assert product["shipping"]["supplyFee"] == 3000
+    assert product["shipping"]["supplyFeeRaw"] == "3,000"
+
+
 def test_detail_parser_limits_raw_records():
     payload = {
         "domeggook": {

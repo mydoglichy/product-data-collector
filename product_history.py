@@ -57,7 +57,19 @@ EXPECTED_SECTION_FIELDS = {
         "domeOrderUnit",
         "supplyOrderUnit",
     ),
-    "shipping": ("fee", "type", "isFreeShipping", "domeFee", "domeFeeType", "supplyFee", "supplyFeeType"),
+    "shipping": (
+        "fee",
+        "type",
+        "feeType",
+        "feePayer",
+        "isFreeShipping",
+        "domeFee",
+        "domeFeeRaw",
+        "domeFeeType",
+        "supplyFee",
+        "supplyFeeRaw",
+        "supplyFeeType",
+    ),
 }
 NUMERIC_TEXT_RE = re.compile(r"^[\s$￦₩€£¥]*[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?[\s원]*$")
 

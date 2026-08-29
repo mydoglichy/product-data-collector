@@ -18,11 +18,10 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from product_history import comparable_state, external_product_id, fingerprint_state, normalize_current_product
+from shipping_fees import parse_shipping_fee
 
 
 TRUE_VALUES = {"1", "true", "yes", "y", "on"}
-DEFAULT_EMBEDDING_DIMENSIONS = 1536
-
 
 @dataclass(frozen=True)
 class PostgresConfig:
@@ -95,7 +94,6 @@ def test_connection(project_root: Path | None = None) -> dict[str, str]:
 
 def init_schema(connection: Connection[Any]) -> None:
     statements = (
-        "CREATE EXTENSION IF NOT EXISTS vector",
         """
         CREATE TABLE IF NOT EXISTS products (
             id BIGSERIAL PRIMARY KEY,
@@ -358,19 +356,6 @@ def init_schema(connection: Connection[Any]) -> None:
             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
         """,
-        f"""
-        CREATE TABLE IF NOT EXISTS product_embeddings (
-            product_id BIGINT PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
-            embedding_source TEXT NOT NULL DEFAULT 'product_name',
-            model_name TEXT NULL,
-            dimensions INTEGER NOT NULL DEFAULT {DEFAULT_EMBEDDING_DIMENSIONS},
-            embedding vector({DEFAULT_EMBEDDING_DIMENSIONS}) NULL,
-            embedded_text TEXT NULL,
-            embedded_at TIMESTAMPTZ NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )
-        """,
         "CREATE INDEX IF NOT EXISTS idx_products_platform_external_id ON products(platform, external_product_id)",
         "CREATE INDEX IF NOT EXISTS idx_products_last_collected_at ON products(last_collected_at)",
         "CREATE INDEX IF NOT EXISTS idx_product_change_history_product_changed_at ON product_change_history(product_id, changed_at)",
@@ -485,7 +470,6 @@ def _save_snapshot(connection: Connection[Any], row: dict[str, Any]) -> None:
     _insert_price(connection, product_id, row)
     _insert_inventory(connection, product_id, row)
     _insert_shipping(connection, product_id, row)
-    _ensure_embedding_placeholder(connection, product_id)
 
     if before_fingerprint != row["comparable_fingerprint"]:
         connection.execute(
@@ -566,20 +550,9 @@ def _insert_shipping(connection: Connection[Any], product_id: int, row: dict[str
                 shipping["fee"],
                 shipping["shipping_type"],
                 row["is_free_shipping"],
-                Jsonb(row["shipping_payload"]),
+                Jsonb(_json_safe(shipping.get("payload", row["shipping_payload"]))),
             ),
         )
-
-
-def _ensure_embedding_placeholder(connection: Connection[Any], product_id: int) -> None:
-    connection.execute(
-        """
-        INSERT INTO product_embeddings (product_id)
-        VALUES (%s)
-        ON CONFLICT (product_id) DO NOTHING
-        """,
-        (product_id,),
-    )
 
 
 def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> dict[str, Any] | None:
@@ -591,6 +564,7 @@ def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> 
     prices = _section_or_empty(comparable, current, "prices")
     inventory = _section_or_empty(comparable, current, "inventory")
     shipping = _section_or_empty(comparable, current, "shipping")
+    shipping_payload = _shipping_payload(comparable, current)
     return {
         "platform": platform,
         "external_product_id": external_id,
@@ -603,13 +577,13 @@ def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> 
         "comparable_fingerprint": fingerprint_state(comparable),
         "prices_payload": prices,
         "inventory_payload": inventory,
-        "shipping_payload": shipping,
+        "shipping_payload": shipping_payload,
         "primary_price": _decimal_or_none(_extract_primary_price(prices, current)),
         "price_rows": _price_rows(platform, prices, current),
         "stock_quantity": _decimal_or_none(_first_available_value(inventory, current, "stockQuantity")),
-        "shipping_fee": _decimal_or_none(_first_value(shipping, "fee", "domeFee", "supplyFee")),
-        "shipping_type": _text_or_none(_first_value(shipping, "type", "feeType", "domeFeeType", "supplyFeeType")),
-        "shipping_rows": _shipping_rows(platform, shipping),
+        "shipping_fee": _shipping_rows(platform, shipping_payload)[0]["fee"],
+        "shipping_type": _text_or_none(_first_value(shipping_payload, "type", "feeType", "domeFeeType", "supplyFeeType")),
+        "shipping_rows": _shipping_rows(platform, shipping_payload),
         "is_free_shipping": _bool_or_none(_first_available_value(shipping, current, "isFreeShipping")),
     }
 
@@ -631,6 +605,24 @@ def _section_or_empty(comparable: dict[str, Any], current: dict[str, Any], key: 
     if any(_has_value(value) for value in comparable_section.values()):
         return comparable_section
     return _object_or_empty(current.get(key)) or comparable_section
+
+
+def _shipping_payload(comparable: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+    current_shipping = _object_or_empty(current.get("shipping"))
+    comparable_shipping = _object_or_empty(comparable.get("shipping"))
+    payload = {
+        key: value
+        for key, value in current_shipping.items()
+        if _has_value(value)
+    }
+    payload.update(
+        {
+            key: value
+            for key, value in comparable_shipping.items()
+            if _has_value(value)
+        }
+    )
+    return payload or comparable_shipping
 
 
 def _first_text(payload: dict[str, Any], *keys: str) -> str | None:
@@ -753,31 +745,70 @@ def _price_rows(platform: str, prices: dict[str, Any], current: dict[str, Any]) 
 
 def _shipping_rows(platform: str, shipping: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    fee_payer = _first_value(shipping, "feePayer", "deliWho", "who")
     if _has_value(shipping.get("domeFee")) or _has_value(shipping.get("domeFeeType")):
+        parsed = parse_shipping_fee(
+            _first_value(shipping, "domeFeeRaw", "domeFee"),
+            shipping.get("domeFeeType"),
+            fee_payer=fee_payer,
+        )
         rows.append(
             {
                 "market": "dome",
-                "fee": _decimal_or_none(shipping.get("domeFee")),
+                "fee": parsed["shipping_fee"],
                 "shipping_type": _text_or_none(shipping.get("domeFeeType")),
+                **parsed,
+                "payload": _shipping_row_payload(shipping, "dome", parsed),
             }
         )
     if _has_value(shipping.get("supplyFee")) or _has_value(shipping.get("supplyFeeType")):
+        parsed = parse_shipping_fee(
+            _first_value(shipping, "supplyFeeRaw", "supplyFee"),
+            shipping.get("supplyFeeType"),
+            fee_payer=fee_payer,
+        )
         rows.append(
             {
                 "market": "supply",
-                "fee": _decimal_or_none(shipping.get("supplyFee")),
+                "fee": parsed["shipping_fee"],
                 "shipping_type": _text_or_none(shipping.get("supplyFeeType")),
+                **parsed,
+                "payload": _shipping_row_payload(shipping, "supply", parsed),
             }
         )
     if rows:
         return rows
+    parsed = parse_shipping_fee(
+        shipping.get("fee"),
+        _first_value(shipping, "type", "feeType"),
+        fee_payer=fee_payer,
+    )
     return [
         {
             "market": platform,
-            "fee": _decimal_or_none(shipping.get("fee")),
+            "fee": parsed["shipping_fee"],
             "shipping_type": _text_or_none(_first_value(shipping, "type", "feeType")),
+            **parsed,
+            "payload": _shipping_row_payload(shipping, platform, parsed),
         }
     ]
+
+
+def _shipping_row_payload(shipping: dict[str, Any], market: str, parsed: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(shipping)
+    payload["market"] = market
+    payload.update(parsed)
+    return payload
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    if isinstance(value, dict):
+        return {key: _json_safe(child) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(child) for child in value]
+    return value
 
 
 def _decimal_or_none(value: Any) -> Decimal | None:
