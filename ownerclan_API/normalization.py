@@ -81,6 +81,9 @@ def normalize_item(item: dict[str, Any], collected_at: str) -> dict[str, Any]:
             "attributes": item.get("attributes"),
             "closingTime": item.get("closingTime"),
             "vendorKey": metadata.get("vendorKey") if isinstance(metadata, dict) else None,
+            "certificateInformation": metadata.get("certificateInformation") if isinstance(metadata, dict) else None,
+            "grade": metadata.get("grade") if isinstance(metadata, dict) else None,
+            "gradeDetail": metadata.get("gradeDetail") if isinstance(metadata, dict) else None,
         },
         "raw": raw,
     }

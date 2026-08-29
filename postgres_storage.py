@@ -119,12 +119,13 @@ def init_schema(connection: Connection[Any]) -> None:
             id BIGSERIAL PRIMARY KEY,
             product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
             collected_at TIMESTAMPTZ NOT NULL,
+            market TEXT NOT NULL DEFAULT 'default',
             price_type TEXT NOT NULL DEFAULT 'primary',
             amount NUMERIC(18, 2) NULL,
             currency CHAR(3) NOT NULL DEFAULT 'KRW',
             payload JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            UNIQUE (product_id, collected_at, price_type)
+            CONSTRAINT product_prices_product_collected_market_type_key UNIQUE (product_id, collected_at, market, price_type)
         )
         """,
         """
@@ -143,13 +144,206 @@ def init_schema(connection: Connection[Any]) -> None:
             id BIGSERIAL PRIMARY KEY,
             product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
             collected_at TIMESTAMPTZ NOT NULL,
+            market TEXT NOT NULL DEFAULT 'default',
             fee NUMERIC(18, 2) NULL,
             shipping_type TEXT NULL,
             is_free_shipping BOOLEAN NULL,
             payload JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            UNIQUE (product_id, collected_at)
+            CONSTRAINT product_shipping_fees_product_collected_market_key UNIQUE (product_id, collected_at, market)
         )
+        """,
+        "ALTER TABLE product_prices ADD COLUMN IF NOT EXISTS market TEXT NOT NULL DEFAULT 'default'",
+        "ALTER TABLE product_shipping_fees ADD COLUMN IF NOT EXISTS market TEXT NOT NULL DEFAULT 'default'",
+        "ALTER TABLE product_prices DROP CONSTRAINT IF EXISTS product_prices_product_id_collected_at_price_type_key",
+        "ALTER TABLE product_shipping_fees DROP CONSTRAINT IF EXISTS product_shipping_fees_product_id_collected_at_key",
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'product_prices_product_collected_market_type_key'
+            ) THEN
+                ALTER TABLE product_prices
+                ADD CONSTRAINT product_prices_product_collected_market_type_key
+                UNIQUE (product_id, collected_at, market, price_type);
+            END IF;
+        END $$;
+        """,
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'product_shipping_fees_product_collected_market_key'
+            ) THEN
+                ALTER TABLE product_shipping_fees
+                ADD CONSTRAINT product_shipping_fees_product_collected_market_key
+                UNIQUE (product_id, collected_at, market);
+            END IF;
+        END $$;
+        """,
+        """
+        INSERT INTO product_prices (product_id, collected_at, market, price_type, amount, currency, payload, created_at)
+        SELECT product_id, collected_at, market, price_type, amount, currency, payload, created_at
+        FROM (
+            SELECT
+                product_id,
+                collected_at,
+                market,
+                price_type,
+                CASE
+                    WHEN value_text ~ '^[+-]?(?:\\d+|\\d{1,3}(?:,\\d{3})+)(?:\\.\\d+)?$'
+                    THEN replace(value_text, ',', '')::numeric
+                    ELSE NULL
+                END AS amount,
+                currency,
+                payload,
+                created_at
+            FROM (
+                SELECT pp.product_id, pp.collected_at, pp.currency, pp.payload, pp.created_at, v.market, v.price_type, pp.payload #>> ARRAY[v.payload_key] AS value_text
+                FROM product_prices pp
+                CROSS JOIN (
+                    VALUES
+                        ('dome', 'current_supply', 'domeCurrentSupplyPrice'),
+                        ('supply', 'current_supply', 'supplyCurrentSupplyPrice'),
+                        ('retail', 'minimum_retail', 'minimumRetailPrice'),
+                        ('retail', 'recommended_retail', 'recommendedRetailPrice')
+                ) AS v(market, price_type, payload_key)
+                WHERE pp.market = 'default'
+                  AND pp.payload ? v.payload_key
+                  AND pp.payload -> v.payload_key <> 'null'::jsonb
+                  AND pp.payload #>> ARRAY[v.payload_key] <> ''
+            ) source_values
+        ) backfill_rows
+        ON CONFLICT (product_id, collected_at, market, price_type) DO UPDATE SET
+            amount = EXCLUDED.amount,
+            payload = EXCLUDED.payload
+        """,
+        """
+        INSERT INTO product_prices (product_id, collected_at, market, price_type, amount, currency, payload, created_at)
+        SELECT product_id, collected_at, market, price_type, amount, currency, payload, created_at
+        FROM (
+            SELECT
+                pp.product_id,
+                pp.collected_at,
+                p.platform AS market,
+                v.price_type,
+                CASE
+                    WHEN pp.payload #>> ARRAY[v.payload_key] ~ '^[+-]?(?:\\d+|\\d{1,3}(?:,\\d{3})+)(?:\\.\\d+)?$'
+                    THEN replace(pp.payload #>> ARRAY[v.payload_key], ',', '')::numeric
+                    ELSE NULL
+                END AS amount,
+                pp.currency,
+                pp.payload,
+                pp.created_at
+            FROM product_prices pp
+            JOIN products p ON p.id = pp.product_id
+            CROSS JOIN (
+                VALUES
+                    ('current_supply', 'currentSupplyPrice'),
+                    ('fixed', 'fixedPrice')
+            ) AS v(price_type, payload_key)
+            WHERE pp.market = 'default'
+              AND pp.payload ? v.payload_key
+              AND pp.payload -> v.payload_key <> 'null'::jsonb
+              AND pp.payload #>> ARRAY[v.payload_key] <> ''
+        ) backfill_rows
+        ON CONFLICT (product_id, collected_at, market, price_type) DO UPDATE SET
+            amount = EXCLUDED.amount,
+            payload = EXCLUDED.payload
+        """,
+        """
+        INSERT INTO product_shipping_fees (product_id, collected_at, market, fee, shipping_type, is_free_shipping, payload, created_at)
+        SELECT product_id, collected_at, market, fee, shipping_type, is_free_shipping, payload, created_at
+        FROM (
+            SELECT
+                ps.product_id,
+                ps.collected_at,
+                v.market,
+                CASE
+                    WHEN ps.payload #>> ARRAY[v.fee_key] ~ '^[+-]?(?:\\d+|\\d{1,3}(?:,\\d{3})+)(?:\\.\\d+)?$'
+                    THEN replace(ps.payload #>> ARRAY[v.fee_key], ',', '')::numeric
+                    ELSE NULL
+                END AS fee,
+                NULLIF(ps.payload #>> ARRAY[v.type_key], '') AS shipping_type,
+                ps.is_free_shipping,
+                ps.payload,
+                ps.created_at
+            FROM product_shipping_fees ps
+            CROSS JOIN (
+                VALUES
+                    ('dome', 'domeFee', 'domeFeeType'),
+                    ('supply', 'supplyFee', 'supplyFeeType')
+            ) AS v(market, fee_key, type_key)
+            WHERE ps.market = 'default'
+              AND (
+                  (
+                      ps.payload ? v.fee_key
+                      AND ps.payload -> v.fee_key <> 'null'::jsonb
+                      AND ps.payload -> v.fee_key <> '{"__value__": "__MISSING__"}'::jsonb
+                      AND ps.payload #>> ARRAY[v.fee_key] <> ''
+                  )
+                  OR (
+                      ps.payload ? v.type_key
+                      AND ps.payload -> v.type_key <> 'null'::jsonb
+                      AND ps.payload -> v.type_key <> '{"__value__": "__MISSING__"}'::jsonb
+                      AND ps.payload #>> ARRAY[v.type_key] <> ''
+                  )
+              )
+        ) backfill_rows
+        ON CONFLICT (product_id, collected_at, market) DO UPDATE SET
+            fee = EXCLUDED.fee,
+            shipping_type = EXCLUDED.shipping_type,
+            is_free_shipping = EXCLUDED.is_free_shipping,
+            payload = EXCLUDED.payload
+        """,
+        """
+        INSERT INTO product_shipping_fees (product_id, collected_at, market, fee, shipping_type, is_free_shipping, payload, created_at)
+        SELECT product_id, collected_at, market, fee, shipping_type, is_free_shipping, payload, created_at
+        FROM (
+            SELECT
+                ps.product_id,
+                ps.collected_at,
+                p.platform AS market,
+                CASE
+                    WHEN ps.payload #>> '{fee}' ~ '^[+-]?(?:\\d+|\\d{1,3}(?:,\\d{3})+)(?:\\.\\d+)?$'
+                    THEN replace(ps.payload #>> '{fee}', ',', '')::numeric
+                    ELSE NULL
+                END AS fee,
+                NULLIF(COALESCE(ps.payload #>> '{type}', ps.payload #>> '{feeType}'), '') AS shipping_type,
+                ps.is_free_shipping,
+                ps.payload,
+                ps.created_at
+            FROM product_shipping_fees ps
+            JOIN products p ON p.id = ps.product_id
+            WHERE ps.market = 'default'
+              AND (
+                  (
+                      ps.payload ? 'fee'
+                      AND ps.payload -> 'fee' <> 'null'::jsonb
+                      AND ps.payload -> 'fee' <> '{"__value__": "__MISSING__"}'::jsonb
+                      AND ps.payload #>> '{fee}' <> ''
+                  )
+                  OR (
+                      ps.payload ? 'type'
+                      AND ps.payload -> 'type' <> 'null'::jsonb
+                      AND ps.payload -> 'type' <> '{"__value__": "__MISSING__"}'::jsonb
+                      AND ps.payload #>> '{type}' <> ''
+                  )
+                  OR (
+                      ps.payload ? 'feeType'
+                      AND ps.payload -> 'feeType' <> 'null'::jsonb
+                      AND ps.payload -> 'feeType' <> '{"__value__": "__MISSING__"}'::jsonb
+                      AND ps.payload #>> '{feeType}' <> ''
+                  )
+              )
+        ) backfill_rows
+        ON CONFLICT (product_id, collected_at, market) DO UPDATE SET
+            fee = EXCLUDED.fee,
+            shipping_type = EXCLUDED.shipping_type,
+            is_free_shipping = EXCLUDED.is_free_shipping,
+            payload = EXCLUDED.payload
         """,
         """
         CREATE TABLE IF NOT EXISTS product_change_history (
@@ -320,16 +514,24 @@ def _save_snapshot(connection: Connection[Any], row: dict[str, Any]) -> None:
 
 
 def _insert_price(connection: Connection[Any], product_id: int, row: dict[str, Any]) -> None:
-    connection.execute(
-        """
-        INSERT INTO product_prices (product_id, collected_at, amount, payload)
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (product_id, collected_at, price_type) DO UPDATE SET
-            amount = EXCLUDED.amount,
-            payload = EXCLUDED.payload
-        """,
-        (product_id, row["collected_at"], row["primary_price"], Jsonb(row["prices_payload"])),
-    )
+    for price in row["price_rows"]:
+        connection.execute(
+            """
+            INSERT INTO product_prices (product_id, collected_at, market, price_type, amount, payload)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (product_id, collected_at, market, price_type) DO UPDATE SET
+                amount = EXCLUDED.amount,
+                payload = EXCLUDED.payload
+            """,
+            (
+                product_id,
+                row["collected_at"],
+                price["market"],
+                price["price_type"],
+                price["amount"],
+                Jsonb(row["prices_payload"]),
+            ),
+        )
 
 
 def _insert_inventory(connection: Connection[Any], product_id: int, row: dict[str, Any]) -> None:
@@ -346,25 +548,27 @@ def _insert_inventory(connection: Connection[Any], product_id: int, row: dict[st
 
 
 def _insert_shipping(connection: Connection[Any], product_id: int, row: dict[str, Any]) -> None:
-    connection.execute(
-        """
-        INSERT INTO product_shipping_fees (product_id, collected_at, fee, shipping_type, is_free_shipping, payload)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT (product_id, collected_at) DO UPDATE SET
-            fee = EXCLUDED.fee,
-            shipping_type = EXCLUDED.shipping_type,
-            is_free_shipping = EXCLUDED.is_free_shipping,
-            payload = EXCLUDED.payload
-        """,
-        (
-            product_id,
-            row["collected_at"],
-            row["shipping_fee"],
-            row["shipping_type"],
-            row["is_free_shipping"],
-            Jsonb(row["shipping_payload"]),
-        ),
-    )
+    for shipping in row["shipping_rows"]:
+        connection.execute(
+            """
+            INSERT INTO product_shipping_fees (product_id, collected_at, market, fee, shipping_type, is_free_shipping, payload)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (product_id, collected_at, market) DO UPDATE SET
+                fee = EXCLUDED.fee,
+                shipping_type = EXCLUDED.shipping_type,
+                is_free_shipping = EXCLUDED.is_free_shipping,
+                payload = EXCLUDED.payload
+            """,
+            (
+                product_id,
+                row["collected_at"],
+                shipping["market"],
+                shipping["fee"],
+                shipping["shipping_type"],
+                row["is_free_shipping"],
+                Jsonb(row["shipping_payload"]),
+            ),
+        )
 
 
 def _ensure_embedding_placeholder(connection: Connection[Any], product_id: int) -> None:
@@ -401,9 +605,11 @@ def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> 
         "inventory_payload": inventory,
         "shipping_payload": shipping,
         "primary_price": _decimal_or_none(_extract_primary_price(prices, current)),
+        "price_rows": _price_rows(platform, prices, current),
         "stock_quantity": _decimal_or_none(_first_available_value(inventory, current, "stockQuantity")),
         "shipping_fee": _decimal_or_none(_first_value(shipping, "fee", "domeFee", "supplyFee")),
         "shipping_type": _text_or_none(_first_value(shipping, "type", "feeType", "domeFeeType", "supplyFeeType")),
+        "shipping_rows": _shipping_rows(platform, shipping),
         "is_free_shipping": _bool_or_none(_first_available_value(shipping, current, "isFreeShipping")),
     }
 
@@ -482,6 +688,96 @@ def _extract_primary_price(prices: dict[str, Any], current: dict[str, Any]) -> A
         if isinstance(value, (int, float, str)) and not isinstance(value, bool):
             return value
     return None
+
+
+def _price_rows(platform: str, prices: dict[str, Any], current: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if _has_value(prices.get("domeCurrentSupplyPrice")):
+        rows.append(
+            {
+                "market": "dome",
+                "price_type": "current_supply",
+                "amount": _decimal_or_none(prices.get("domeCurrentSupplyPrice")),
+            }
+        )
+    if _has_value(prices.get("supplyCurrentSupplyPrice")):
+        rows.append(
+            {
+                "market": "supply",
+                "price_type": "current_supply",
+                "amount": _decimal_or_none(prices.get("supplyCurrentSupplyPrice")),
+            }
+        )
+    if _has_value(prices.get("minimumRetailPrice")):
+        rows.append(
+            {
+                "market": "retail",
+                "price_type": "minimum_retail",
+                "amount": _decimal_or_none(prices.get("minimumRetailPrice")),
+            }
+        )
+    if _has_value(prices.get("recommendedRetailPrice")):
+        rows.append(
+            {
+                "market": "retail",
+                "price_type": "recommended_retail",
+                "amount": _decimal_or_none(prices.get("recommendedRetailPrice")),
+            }
+        )
+    if _has_value(prices.get("currentSupplyPrice")):
+        rows.append(
+            {
+                "market": platform,
+                "price_type": "current_supply",
+                "amount": _decimal_or_none(prices.get("currentSupplyPrice")),
+            }
+        )
+    if _has_value(prices.get("fixedPrice")):
+        rows.append(
+            {
+                "market": platform,
+                "price_type": "fixed",
+                "amount": _decimal_or_none(prices.get("fixedPrice")),
+            }
+        )
+    if rows:
+        return rows
+    return [
+        {
+            "market": platform,
+            "price_type": "primary",
+            "amount": _decimal_or_none(_extract_primary_price(prices, current)),
+        }
+    ]
+
+
+def _shipping_rows(platform: str, shipping: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if _has_value(shipping.get("domeFee")) or _has_value(shipping.get("domeFeeType")):
+        rows.append(
+            {
+                "market": "dome",
+                "fee": _decimal_or_none(shipping.get("domeFee")),
+                "shipping_type": _text_or_none(shipping.get("domeFeeType")),
+            }
+        )
+    if _has_value(shipping.get("supplyFee")) or _has_value(shipping.get("supplyFeeType")):
+        rows.append(
+            {
+                "market": "supply",
+                "fee": _decimal_or_none(shipping.get("supplyFee")),
+                "shipping_type": _text_or_none(shipping.get("supplyFeeType")),
+            }
+        )
+    if rows:
+        return rows
+    return [
+        {
+            "market": platform,
+            "fee": _decimal_or_none(shipping.get("fee")),
+            "shipping_type": _text_or_none(_first_value(shipping, "type", "feeType")),
+        }
+    ]
 
 
 def _decimal_or_none(value: Any) -> Decimal | None:
