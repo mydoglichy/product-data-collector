@@ -9,19 +9,14 @@ from .api_client import DomeggookApiError, DomeggookClient, create_domeggook_cli
 from .config import DomeggookConfig, find_project_root, load_api_keys, load_config
 from .logging_config import configure_logging
 from .parsing import parse_detail_products
-from postgres_storage import save_product_snapshots_if_enabled
-from product_history import append_collection_run
+from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
 
 from .storage import (
     active_product_ids,
     chunked,
     load_tracked_products,
-    merge_product_snapshots,
-    save_failures,
-    save_raw_samples,
-    update_latest_and_history,
 )
-from .time_utils import now_iso, output_file_stamp
+from .time_utils import now_iso
 
 
 LOGGER = logging.getLogger("domeggook_API.collect_product_details")
@@ -46,7 +41,6 @@ def collect_details(
         client = create_domeggook_client(api_keys, config)
 
     collected_at = now_iso(config.timezone)
-    started_at = collected_at
     products: list[dict[str, object]] = []
     failures: list[dict[str, object]] = []
     raw_remaining = config.details.raw_sample_limit
@@ -72,24 +66,13 @@ def collect_details(
             unique_products[str(product_id)] = product
 
     if not dry_run:
-        file_stamp = output_file_stamp("domeggook", config.timezone)
-        save_raw_samples(
-            data_dir / "raw" / f"{file_stamp}_raw.json",
-            collected_at,
-            unique_products.values(),
-            config.details.raw_sample_limit,
-        )
-        merge_product_snapshots(
-            data_dir / "processed" / f"{file_stamp}_product-snapshots.json",
-            collected_at,
-            (_without_raw(product) for product in unique_products.values()),
-            failures,
-        )
-        change_stats = update_latest_and_history(
-            latest_path=data_dir / "state" / "latest-products.json",
-            history_path=data_dir / "history" / f"{file_stamp}_product-history.json",
+        save_product_raw_samples_if_enabled(
+            project_root=project_root,
+            platform="domeggook",
             collected_at=collected_at,
-            products=(_without_raw(product) for product in unique_products.values()),
+            products=unique_products.values(),
+            limit=config.details.raw_sample_limit,
+            logger=LOGGER,
         )
         save_product_snapshots_if_enabled(
             project_root=project_root,
@@ -97,20 +80,6 @@ def collect_details(
             collected_at=collected_at,
             products=(_without_raw(product) for product in unique_products.values()),
             logger=LOGGER,
-        )
-        if failures:
-            save_failures(data_dir / "summaries" / f"{file_stamp}_failures.json", collected_at, failures)
-        append_collection_run(
-            data_dir / "state" / "collection-runs.json",
-            platform="domeggook",
-            started_at=started_at,
-            ended_at=now_iso(config.timezone),
-            success=not failures,
-            queried_product_count=len(product_ids),
-            new_product_count=change_stats["newProductCount"],
-            changed_product_count=change_stats["changedProductCount"],
-            unchanged_product_count=change_stats["unchangedProductCount"],
-            failed_product_count=len(failures),
         )
 
     return {

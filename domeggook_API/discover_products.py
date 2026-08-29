@@ -10,8 +10,9 @@ from .categories import load_or_refresh_categories
 from .config import DomeggookConfig, find_project_root, load_api_keys, load_config
 from .logging_config import configure_logging
 from .parsing import parse_list_items, parse_product_id
-from .storage import append_search_ranks, load_tracked_products, merge_discovered_product, save_tracked_products
-from .time_utils import now_iso, output_file_stamp
+from .storage import load_tracked_products, merge_discovered_product, save_tracked_products
+from .time_utils import now_iso
+from postgres_storage import save_search_ranks_if_enabled
 
 
 LOGGER = logging.getLogger("domeggook_API.discover_products")
@@ -99,9 +100,11 @@ def discover(
 
     if not dry_run:
         save_tracked_products(tracked_path, tracked)
-        append_search_ranks(
-            data_dir / "processed" / f"{output_file_stamp('domeggook', config.timezone)}_search-ranks.json",
-            search_rank_records,
+        save_search_ranks_if_enabled(
+            project_root=project_root,
+            platform="domeggook",
+            records=search_rank_records,
+            logger=LOGGER,
         )
 
     return {

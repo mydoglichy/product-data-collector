@@ -33,7 +33,7 @@ class FakeClient:
         }
 
 
-def test_bulk_collector_resumes_from_checkpoint_and_writes_summary(tmp_path, monkeypatch):
+def test_bulk_collector_resumes_from_checkpoint_and_saves_to_postgres(tmp_path, monkeypatch):
     project_root = tmp_path
     api_dir = project_root / "coupang_API"
     api_dir.mkdir()
@@ -50,8 +50,19 @@ def test_bulk_collector_resumes_from_checkpoint_and_writes_summary(tmp_path, mon
         encoding="utf-8",
     )
     FakeClient.calls = []
+    saved = {"raw": [], "snapshots": []}
     monkeypatch.setattr(collector, "load_credentials", lambda root: ("access", "secret"))
     monkeypatch.setattr(collector, "CoupangPartnersClient", FakeClient)
+    monkeypatch.setattr(
+        collector,
+        "save_product_raw_samples_if_enabled",
+        lambda **kwargs: saved["raw"].append(kwargs) or 1,
+    )
+    monkeypatch.setattr(
+        collector,
+        "save_product_snapshots_if_enabled",
+        lambda **kwargs: saved["snapshots"].append(kwargs) or 1,
+    )
 
     exit_code = collector.collect_once(project_root, collector.CollectorConfig(requests_per_minute=40, raw_sample_limit=1))
 
@@ -61,20 +72,11 @@ def test_bulk_collector_resumes_from_checkpoint_and_writes_summary(tmp_path, mon
     assert FakeClient.calls[0].srp_link_only is False
     assert not checkpoint_path.exists()
 
-    summary_files = list((api_dir / "data" / "summaries").glob("*_summary.json"))
-    assert len(summary_files) == 1
-    summary = json.loads(summary_files[0].read_text(encoding="utf-8"))
-    assert summary["totalKeywords"] == 2
-    assert summary["skippedCompletedKeywords"] == 1
-    assert summary["successCount"] == 1
-    assert summary["failureCount"] == 0
-    assert summary["collectedProductCount"] == 1
-    assert summary["rawSampleLimit"] == 1
-    assert summary["rawSavedCount"] == 1
-
-    product_files = list((api_dir / "data" / "processed").glob("*_products.jsonl"))
-    assert len(product_files) == 1
-    product = json.loads(product_files[0].read_text(encoding="utf-8").splitlines()[0])
+    assert not list((api_dir / "data" / "summaries").glob("*_summary.json"))
+    assert not list((api_dir / "data" / "processed").glob("*_products.jsonl"))
+    assert len(saved["raw"]) == 1
+    assert len(saved["snapshots"]) == 1
+    product = list(saved["snapshots"][0]["products"])[0]
     assert product == {
         "collectedAt": product["collectedAt"],
         "isFreeShipping": True,
