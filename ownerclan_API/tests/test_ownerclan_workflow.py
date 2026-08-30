@@ -1,6 +1,7 @@
 ﻿from pathlib import Path
 
 from ownerclan_API.client import OwnerclanGraphQLError
+from ownerclan_API.collect_by_categories import collect_by_categories
 from ownerclan_API.collect_product_details import collect_details, fetch_items_batch
 from ownerclan_API.config import (
     DetailsConfig,
@@ -27,6 +28,28 @@ class FakeClient:
 
     def graphql(self, query):
         self.queries.append(query)
+        if "descendants" in query:
+            return {
+                "category": {
+                    "descendants": {
+                        "pageInfo": {"hasNextPage": False, "endCursor": "cat-end"},
+                        "edges": [
+                            {"cursor": "cat1", "node": _category("C1", children=[{"key": "C1-1", "name": "leaf"}])},
+                            {"cursor": "cat2", "node": _category("C1-1", full_name="root > cat > leaf")},
+                        ],
+                    }
+                }
+            }
+        if "allItems" in query and "category:" in query:
+            return {
+                "allItems": {
+                    "pageInfo": {"hasNextPage": False, "endCursor": "item-end"},
+                    "edges": [
+                        {"cursor": "item1", "node": _item("W1")},
+                        {"cursor": "item2", "node": _item("W2")},
+                    ],
+                }
+            }
         if "allItems" in query and "search:" in query:
             return {
                 "allItems": {
@@ -53,20 +76,7 @@ def test_keyword_default_and_new_search_and_dedupes_product_keys(tmp_path):
     config = _config(tmp_path)
     config.discovery.keyword_file.write_text("case\ncase\n", encoding="utf-8")
     client = FakeClient()
-    saved_ranks = []
-
-    def save_ranks(**kwargs):
-        saved_ranks.extend(kwargs["records"])
-        return len(saved_ranks)
-
-    import ownerclan_API.discover_products as discover_module
-    original = discover_module.save_search_ranks_if_enabled
-    discover_module.save_search_ranks_if_enabled = save_ranks
-
-    try:
-        result = discover(tmp_path, config, client=client)
-    finally:
-        discover_module.save_search_ranks_if_enabled = original
+    result = discover(tmp_path, config, client=client)
 
     assert result["discoveredCount"] == 4
     assert result["newProductCount"] == 2
@@ -78,9 +88,37 @@ def test_keyword_default_and_new_search_and_dedupes_product_keys(tmp_path):
     assert "searchTypes" not in tracked["W1"]
     assert tracked["W1"]["reasons"] == ["default", "registerDateDesc"]
     assert not list(config.output.output_dir.glob("ownerclan_*_search-ranks.json"))
-    ranks = saved_ranks
-    assert {record["sortBy"] for record in ranks} == {"default", "registerDateDesc"}
-    assert all("searchType" not in record for record in ranks)
+
+
+def test_category_collection_refreshes_leaf_cache_and_saves_products(tmp_path):
+    config = _config(tmp_path)
+    client = FakeClient()
+    saved = {"raw": [], "snapshots": []}
+
+    import ownerclan_API.collect_by_categories as collect_module
+    original_raw = collect_module.save_product_raw_samples_if_enabled
+    original_snapshots = collect_module.save_product_snapshots_if_enabled
+    collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: saved["raw"].append(kwargs) or 1
+    collect_module.save_product_snapshots_if_enabled = lambda **kwargs: saved["snapshots"].append(kwargs) or 1
+
+    try:
+        result = collect_by_categories(tmp_path, config, refresh_categories=True, client=client)
+    finally:
+        collect_module.save_product_raw_samples_if_enabled = original_raw
+        collect_module.save_product_snapshots_if_enabled = original_snapshots
+
+    assert result["categoryCount"] == 1
+    assert result["pageCount"] == 1
+    assert result["successCount"] == 2
+    assert config.output.category_cache_path.exists()
+    cached = load_json_object(config.output.category_cache_path)
+    assert cached["leafCategoryCount"] == 1
+    assert cached["categories"][0]["key"] == "C1-1"
+    tracked = load_tracked_products(config.output.tracked_products_path)
+    assert set(tracked) == {"W1", "W2"}
+    assert tracked["W1"]["reasons"] == ["category:C1-1"]
+    assert len(saved["raw"]) == 1
+    assert len(saved["snapshots"]) == 1
 
 
 def test_multiple_item_query_falls_back_to_items_by_keys_then_single_item():
@@ -148,7 +186,17 @@ def test_cursor_pagination_and_repeated_cursor_stops(tmp_path):
             }
 
     config = _config(tmp_path)
-    result = sync_incremental(tmp_path, config, client=PagingClient())
+    import ownerclan_API.sync_incremental as sync_module
+    original_raw = sync_module.save_product_raw_samples_if_enabled
+    original_snapshots = sync_module.save_product_snapshots_if_enabled
+    sync_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
+    sync_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+
+    try:
+        result = sync_incremental(tmp_path, config, client=PagingClient())
+    finally:
+        sync_module.save_product_raw_samples_if_enabled = original_raw
+        sync_module.save_product_snapshots_if_enabled = original_snapshots
 
     assert result["pageCount"] == 2
     assert result["successCount"] == 2
@@ -182,7 +230,17 @@ def test_incremental_item_limit_stops_after_requested_items(tmp_path):
             }
 
     config = _config(tmp_path)
-    result = sync_incremental(tmp_path, config, item_limit=1, client=ManyItemsClient())
+    import ownerclan_API.sync_incremental as sync_module
+    original_raw = sync_module.save_product_raw_samples_if_enabled
+    original_snapshots = sync_module.save_product_snapshots_if_enabled
+    sync_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
+    sync_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+
+    try:
+        result = sync_incremental(tmp_path, config, item_limit=1, client=ManyItemsClient())
+    finally:
+        sync_module.save_product_raw_samples_if_enabled = original_raw
+        sync_module.save_product_snapshots_if_enabled = original_snapshots
 
     assert result["successCount"] == 1
     tracked = load_tracked_products(config.output.tracked_products_path)
@@ -309,7 +367,7 @@ def _config(tmp_path: Path):
         details=DetailsConfig(batch_size=2),
         incremental=IncrementalConfig(page_size=2, overlap_minutes=120, include_item_histories=False),
         request=RequestConfig(interval_seconds=0, timeout_seconds=10, max_retries=0, retry_after_max_seconds=1),
-        output=OutputConfig(state_dir / "tracked_products.json", output_dir, state_dir, log_dir, 3),
+        output=OutputConfig(state_dir / "tracked_products.json", state_dir / "categories.json", output_dir, state_dir, log_dir, 3),
         timezone="Asia/Seoul",
     )
 
@@ -346,4 +404,14 @@ def _item(key, *, name=None, updated_at="2026-08-24T00:00:00+09:00", options=Non
         "closingTime": None,
         "returnCriteria": None,
         "metadata": {"vendorKey": "V"},
+    }
+
+
+def _category(key, *, name=None, full_name=None, children=None):
+    return {
+        "key": key,
+        "id": f"id-{key}",
+        "name": name or f"category {key}",
+        "fullName": full_name or f"root > category {key}",
+        "children": children or [],
     }

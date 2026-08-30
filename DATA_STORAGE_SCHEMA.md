@@ -9,7 +9,7 @@
 1. 각 API 응답을 플랫폼별 parser/normalizer에서 공통 상품 payload로 정규화한다.
 2. `postgres_storage.save_product_snapshots_if_enabled()`가 상품, 가격, 재고, 배송비, 변경 이력을 저장한다.
 3. raw 샘플이 있는 경우 `save_product_raw_samples_if_enabled()`가 `product_raw_samples`에 저장한다.
-4. discovery/search 순위는 `save_search_ranks_if_enabled()`가 `product_search_ranks`에 저장한다.
+4. 순위 의미가 있는 discovery/search 결과만 `save_search_ranks_if_enabled()`가 `product_search_ranks`에 저장한다.
 
 `POSTGRES_ENABLED`가 꺼져 있으면 DB 저장 함수는 저장하지 않고 `0`을 반환한다. 파일 출력으로 fallback하지 않는다.
 
@@ -97,7 +97,7 @@ discovery/search에서 발견한 상품 순위 이력이다.
 
 - unique key: `(platform, collected_at, market, sort, external_product_id, rank)`
 - 도매꾹/도매매: category, market, sort, reason, product id, rank 저장
-- 오너클랜: keyword, sort, product id, rank 저장
+- 오너클랜: 저장하지 않는다. Seller GraphQL API에서 인기순, 판매량순, 랭킹 순위 의미의 상품 순위 데이터를 기준으로 제공하지 않기 때문이다.
 
 ## 파일 기반 상태
 
@@ -105,6 +105,7 @@ discovery/search에서 발견한 상품 순위 이력이다.
 
 - `domeggook_API/data/state/categories.json`: 도매꾹 카테고리 캐시
 - `domeggook_API/data/state/tracked_products.json`: 도매꾹 상세 수집 대상
+- `ownerclan_API/data/state/categories.json`: 오너클랜 최하위 카테고리 캐시
 - `ownerclan_API/data/state/tracked_products.json`: 오너클랜 상세 수집 대상
 - `ownerclan_API/data/state/incremental-state.json`: 오너클랜 증분 수집 기준 시각
 - `coupang_API/data/state/product_search_checkpoint.json`: 쿠팡 keyword checkpoint

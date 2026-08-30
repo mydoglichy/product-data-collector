@@ -21,6 +21,7 @@ request:
 
 output:
   tracked_products_path: ownerclan_API/data/state/tracked_products.json
+  category_cache_path: ownerclan_API/data/state/categories.json
   output_dir: ownerclan_API/data/processed
   state_dir: ownerclan_API/data/state
   log_dir: ownerclan_API/data/logs

@@ -85,9 +85,21 @@ def items_query(keys: list[str], field_name: str = "items", *, minimal: bool = F
     return f"query {{ {field_name}(keys: {keys_json}) {{ {_fields(minimal)} }} }}"
 
 
+def category_descendants_query(*, first: int, after: str | None = None) -> str:
+    args: dict[str, Any] = {"first": first}
+    if after:
+        args["after"] = after
+    return (
+        "query { category(key: \"00000000\") { descendants("
+        + _format_args(args)
+        + ") { pageInfo { hasNextPage startCursor endCursor } edges { cursor node { key id name fullName children { key id name } } } } } }"
+    )
+
+
 def all_items_query(
     *,
     first: int,
+    category: str | None = None,
     search: str | None = None,
     sort_by: str | None = None,
     after: str | None = None,
@@ -96,6 +108,8 @@ def all_items_query(
     minimal: bool = False,
 ) -> str:
     args: dict[str, Any] = {"first": first}
+    if category:
+        args["category"] = category
     if search:
         args["search"] = search
     if sort_by:
