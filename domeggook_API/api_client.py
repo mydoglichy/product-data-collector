@@ -41,6 +41,7 @@ class ListRequest:
     market: str
     sort: str
     size: int
+    page: int = 1
     keyword: str | None = None
     category_code: str | None = None
 
@@ -78,6 +79,7 @@ class DomeggookClient:
             "om": "json",
             "so": request.sort,
             "sz": request.size,
+            "pg": request.page,
         }
         if request.keyword:
             params["kw"] = request.keyword

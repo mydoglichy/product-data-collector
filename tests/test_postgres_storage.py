@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from postgres_storage import _snapshot_row, load_postgres_config, save_product_snapshots_if_enabled
+from postgres_storage import _search_rank_rows, _snapshot_row, load_postgres_config, save_product_snapshots_if_enabled
 
 
 def test_load_postgres_config_reads_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -250,3 +250,51 @@ def test_save_product_snapshots_if_enabled_skips_when_disabled(tmp_path: Path, m
     )
 
     assert saved_count == 0
+
+
+def test_search_rank_rows_keep_only_domeggook_ranked_sorts_and_positive_ranks() -> None:
+    rows = _search_rank_rows(
+        "domeggook",
+        [
+            {"collectedAt": "2026-08-30T10:00:00Z", "productId": "ha-1", "sort": "ha", "rank": 1},
+            {"collectedAt": "2026-08-30T10:00:00Z", "productId": "rd-1", "sort": "rd", "rank": 2},
+            {"collectedAt": "2026-08-30T10:00:00Z", "productId": "da-1", "sort": "da", "rank": 3},
+            {"collectedAt": "2026-08-30T10:00:00Z", "productId": "aa-1", "sort": "aa", "rank": 4},
+            {"collectedAt": "2026-08-30T10:00:00Z", "productId": "missing-rank", "sort": "ha"},
+            {"collectedAt": "2026-08-30T10:00:00Z", "productId": "zero-rank", "sort": "ha", "rank": 0},
+        ],
+    )
+
+    assert [(row["external_product_id"], row["sort"], row["rank"]) for row in rows] == [
+        ("ha-1", "ha", 1),
+        ("rd-1", "rd", 2),
+    ]
+
+
+def test_search_rank_rows_preserve_same_product_for_different_keywords() -> None:
+    rows = _search_rank_rows(
+        "domeggook",
+        [
+            {
+                "collectedAt": "2026-08-30T10:00:00Z",
+                "productId": "100",
+                "keyword": "bag",
+                "categoryCode": "01_01_00_00_00",
+                "market": "dome",
+                "sort": "ha",
+                "rank": 1,
+            },
+            {
+                "collectedAt": "2026-08-30T10:00:00Z",
+                "productId": "100",
+                "keyword": "case",
+                "categoryCode": "02_01_00_00_00",
+                "market": "dome",
+                "sort": "ha",
+                "rank": 1,
+            },
+        ],
+    )
+
+    assert len(rows) == 2
+    assert {row["keyword"] for row in rows} == {"bag", "case"}

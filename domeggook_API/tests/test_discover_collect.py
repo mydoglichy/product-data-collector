@@ -12,7 +12,12 @@ class FakeClient:
 
     def get_item_list(self, request):
         self.list_requests.append(request)
-        return {"domeggook": {"list": {"item": [{"no": "100"}, {"no": "200"}]}}}
+        return {
+            "domeggook": {
+                "header": {"currentPage": 1, "itemsPerPage": request.size, "sort": request.sort},
+                "list": {"item": [{"no": "100"}, {"no": "200"}]},
+            }
+        }
 
     def get_category_list(self):
         self.category_requests += 1
@@ -45,16 +50,129 @@ def test_discover_uses_all_market_and_sort_combinations_without_real_api(tmp_pat
     result = discover(tmp_path, config, client=client)
 
     assert client.category_requests == 1
-    assert len(client.list_requests) == 4
+    assert len(client.list_requests) == 6
     assert {request.category_code for request in client.list_requests} == {"01_01_00_00_00"}
     assert result["categoryCount"] == 1
-    assert result["discoveredCount"] == 8
+    assert result["discoveredCount"] == 12
     assert result["newProductCount"] == 2
     tracked = load_tracked_products(api_dir / "data" / "state" / "tracked_products.json")
     assert set(tracked) == {"100", "200"}
     assert tracked["100"]["keywords"] == ["bag"]
     assert tracked["100"]["markets"] == ["dome", "supply"]
-    assert tracked["100"]["reasons"] == ["popular", "recent"]
+    assert tracked["100"]["reasons"] == ["popular", "ranking", "recent"]
+
+
+def test_discover_saves_only_ranked_sorts_with_global_rank(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTGRES_ENABLED", "false")
+    api_dir = tmp_path / "domeggook_API"
+    api_dir.mkdir()
+    saved_records = []
+
+    def fake_save_search_ranks_if_enabled(**kwargs):
+        saved_records.extend(kwargs["records"])
+        return len(kwargs["records"])
+
+    monkeypatch.setattr(
+        "domeggook_API.discover_products.save_search_ranks_if_enabled",
+        fake_save_search_ranks_if_enabled,
+    )
+
+    class PageTwoClient(FakeClient):
+        def get_item_list(self, request):
+            self.list_requests.append(request)
+            return {
+                "domeggook": {
+                    "header": {"currentPage": 2, "itemsPerPage": 200, "sort": request.sort},
+                    "list": {"item": [{"no": f"{request.sort}-1"}, {"no": f"{request.sort}-2"}]},
+                }
+            }
+
+    config = DomeggookConfig(
+        discovery=DiscoveryConfig(
+            markets=("dome",),
+            sorts={"popular": "ha", "ranking": "rd", "recent": "da", "price_low": "aa"},
+            items_per_keyword=200,
+        ),
+        details=DetailsConfig(batch_size=100, raw_sample_limit=20),
+        request=RequestConfig(
+            max_requests_per_minute=120,
+            max_requests_per_hour=9000,
+            max_requests_per_day=14000,
+            timeout_seconds=20,
+            max_retries=3,
+        ),
+        timezone="Asia/Seoul",
+    )
+
+    result = discover(tmp_path, config, client=PageTwoClient())
+
+    assert result["discoveredCount"] == 8
+    assert {record["sort"] for record in saved_records} == {"ha", "rd"}
+    assert [record["rank"] for record in saved_records] == [201, 202, 201, 202]
+    assert not any(record["rank"] == 0 for record in saved_records)
+
+
+def test_discover_uses_response_sort_for_rank_records(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTGRES_ENABLED", "false")
+    (tmp_path / "domeggook_API").mkdir()
+    saved_records = []
+    monkeypatch.setattr(
+        "domeggook_API.discover_products.save_search_ranks_if_enabled",
+        lambda **kwargs: saved_records.extend(kwargs["records"]) or len(kwargs["records"]),
+    )
+
+    class ResponseSortClient(FakeClient):
+        def get_item_list(self, request):
+            self.list_requests.append(request)
+            return {
+                "domeggook": {
+                    "header": {"currentPage": 1, "itemsPerPage": 20, "sort": "rd"},
+                    "list": {"item": [{"no": "100"}]},
+                }
+            }
+
+    config = DomeggookConfig(
+        discovery=DiscoveryConfig(markets=("dome",), sorts={"popular": "ha"}, items_per_keyword=20),
+        details=DetailsConfig(batch_size=100, raw_sample_limit=20),
+        request=RequestConfig(
+            max_requests_per_minute=120,
+            max_requests_per_hour=9000,
+            max_requests_per_day=14000,
+            timeout_seconds=20,
+            max_retries=3,
+        ),
+        timezone="Asia/Seoul",
+    )
+
+    discover(tmp_path, config, client=ResponseSortClient())
+
+    assert saved_records[0]["sort"] == "rd"
+    assert saved_records[0]["requestedSort"] == "ha"
+
+
+def test_da_discovery_products_remain_detail_targets(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTGRES_ENABLED", "false")
+    api_dir = tmp_path / "domeggook_API"
+    api_dir.mkdir()
+    client = FakeClient()
+    config = DomeggookConfig(
+        discovery=DiscoveryConfig(markets=("dome",), sorts={"recent": "da"}, items_per_keyword=20),
+        details=DetailsConfig(batch_size=100, raw_sample_limit=20),
+        request=RequestConfig(
+            max_requests_per_minute=120,
+            max_requests_per_hour=9000,
+            max_requests_per_day=14000,
+            timeout_seconds=20,
+            max_retries=3,
+        ),
+        timezone="Asia/Seoul",
+    )
+
+    discover(tmp_path, config, client=client)
+    result = collect_details(tmp_path, config, client=client)
+
+    assert result["successCount"] == 2
+    assert client.detail_requests == [["100", "200"]]
 
 
 def test_collect_details_batches_and_writes_snapshot_without_real_api(tmp_path, monkeypatch):
@@ -77,7 +195,7 @@ def test_collect_details_batches_and_writes_snapshot_without_real_api(tmp_path, 
 
 def _config():
     return DomeggookConfig(
-        discovery=DiscoveryConfig(markets=("dome", "supply"), sorts={"popular": "ha", "recent": "da"}, items_per_keyword=20),
+        discovery=DiscoveryConfig(markets=("dome", "supply"), sorts={"popular": "ha", "ranking": "rd", "recent": "da"}, items_per_keyword=20),
         details=DetailsConfig(batch_size=100, raw_sample_limit=20),
         request=RequestConfig(
             max_requests_per_minute=120,

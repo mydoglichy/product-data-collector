@@ -72,10 +72,11 @@ def test_item_list_can_search_by_category_code():
         session=session,
     )
 
-    client.get_item_list(ListRequest(market="dome", sort="da", size=20, category_code="01_01_00_00_00"))
+    client.get_item_list(ListRequest(market="dome", sort="da", size=20, page=2, category_code="01_01_00_00_00"))
 
     params = parse_qs(urlparse(session.urls[0]).query)
     assert params["ca"] == ["01_01_00_00_00"]
+    assert params["pg"] == ["2"]
     assert "kw" not in params
 
 

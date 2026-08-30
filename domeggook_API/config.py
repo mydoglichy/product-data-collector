@@ -11,11 +11,12 @@ from dotenv import load_dotenv
 
 OFFICIAL_RATE_LIMIT_PER_MINUTE = 180
 OFFICIAL_RATE_LIMIT_PER_DAY = 15000
-OFFICIAL_LIST_MAX_SIZE = 100
+OFFICIAL_LIST_MAX_SIZE = 200
 OFFICIAL_DETAIL_MAX_BATCH_SIZE = 100
 DEFAULT_REQUESTS_PER_MINUTE = 120
 DEFAULT_REQUESTS_PER_HOUR = 9000
 DEFAULT_REQUESTS_PER_DAY = 14000
+DOMEGGOOK_OFFICIAL_SORTS = {"se", "rd", "ha", "aa", "ad", "sd", "qa", "qd", "da"}
 
 
 @dataclass(frozen=True)
@@ -69,8 +70,8 @@ def load_config(path: Path) -> DomeggookConfig:
     if invalid_markets:
         raise ValueError(f"discovery.markets contains unsupported values: {', '.join(invalid_markets)}")
 
-    sorts = dict(discovery.get("sorts") or {"popular": "ha", "recent": "da"})
-    invalid_sorts = sorted(set(sorts.values()) - {"ha", "da"})
+    sorts = dict(discovery.get("sorts") or {"popular": "ha", "ranking": "rd", "recent": "da"})
+    invalid_sorts = sorted(set(sorts.values()) - DOMEGGOOK_OFFICIAL_SORTS)
     if invalid_sorts:
         raise ValueError(f"discovery.sorts contains unsupported values: {', '.join(invalid_sorts)}")
 

@@ -14,7 +14,7 @@ def test_config_rejects_values_above_official_maxima(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text(
         "discovery:\n"
-        "  items_per_keyword: 101\n"
+        "  items_per_keyword: 201\n"
         "details:\n"
         "  batch_size: 100\n"
         "request:\n"
