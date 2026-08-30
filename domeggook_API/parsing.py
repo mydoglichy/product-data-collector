@@ -70,6 +70,7 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
     category = _first_dict(item, ("category", "cate", "cat"))
     category_current = _first_dict(category, ("current",))
     delivery = _first_dict(item, ("deli", "delivery", "deliveryInfo", "ship", "shipping"))
+    fee_extra = _first_dict(delivery, ("feeExtra",))
     channel = _first_dict(item, ("channel",))
     dome_fee_raw = _coalesce(_get(deli_dome, "fee", "tbl"), _get(dome, "deliveryFee", "shipFee"))
     supply_fee_raw = _coalesce(_get(deli_supply, "fee", "tbl"), _get(supply, "deliveryFee", "shipFee"))
@@ -101,12 +102,25 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
         "shipping": {
             "method": _get(delivery, "method", "deliveryMethod", "shipMethod"),
             "feePayer": _get(delivery, "who", "pay", "feePayer", "deliveryChargeType", "shipFeeType"),
+            "domeFeePayer": _get(delivery, "pay", "who", "feePayer", "deliveryChargeType", "shipFeeType"),
             "domeFee": _number(dome_fee_raw),
             "domeFeeRaw": dome_fee_raw,
             "domeFeeType": _coalesce(_get(deli_dome, "type"), _get(dome, "deliveryFeeType", "shipFeeType")),
+            "domeFeeTable": _get(deli_dome, "tbl"),
+            "supplyFeePayer": _coalesce(
+                _get(deli_supply, "pay", "who", "feePayer", "deliveryChargeType", "shipFeeType"),
+                _get(delivery, "pay", "who", "feePayer", "deliveryChargeType", "shipFeeType"),
+            ),
             "supplyFee": _number(supply_fee_raw),
             "supplyFeeRaw": supply_fee_raw,
             "supplyFeeType": _coalesce(_get(deli_supply, "type"), _get(supply, "deliveryFeeType", "shipFeeType")),
+            "supplyFeeTable": _get(deli_supply, "tbl"),
+            "feeExtraJeju": _number(_get(fee_extra, "jeju")),
+            "feeExtraIslands": _number(_get(fee_extra, "islands")),
+            "remoteAreaFee": {
+                "jeju": _number(_get(fee_extra, "jeju")),
+                "islands": _number(_get(fee_extra, "islands")),
+            },
             "preparationPeriod": _number(_get(delivery, "wating", "preparationPeriod", "preparationDays", "readyDays")),
             "averageShippingDays": _number(_get(delivery, "sendAvg", "averageShippingDays", "avgDeliveryDays", "avgShipDays")),
             "fastShipping": _get(delivery, "fastDeli", "fastShipping", "quickDelivery", "isFastShipping"),

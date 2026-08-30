@@ -14,33 +14,22 @@
 | `product_prices.amount` | `prices.currentSupplyPrice`, `prices.fixedPrice` |
 | `product_inventory.stock_quantity` | `inventory.stockQuantity` |
 | `product_shipping_fees.market` | `ownerclan` |
-| `product_shipping_fees.fee` | `shipping.fee` |
-| `product_shipping_fees.shipping_type` | 정규화된 배송비 타입 |
+| `product_shipping_fees.fee` | `shippingFee`가 단일 숫자로 확인되는 경우의 원본 배송비 |
+| `product_shipping_fees.shipping_type` | 계산 가능한 배송비 타입. 확정할 수 없으면 `unknown` |
 | `product_raw_samples.payload` | raw 디버깅 샘플 |
 
-오너클랜은 `product_search_ranks`에 저장하지 않는다. Seller API에서 인기순, 판매량순, 랭킹 순위 의미의 상품 순위 데이터를 제공하지 않으므로 검색 결과의 순번을 랭킹 데이터로 취급하지 않는다.
+## 배송비
 
-## 수집 범위
+현재 쿼리에서 수집하는 오너클랜 배송비 API 필드는 `shippingFee`, `shippingType`이다.
 
-기본 수집은 최하위 카테고리 기준 전체 순회다.
+- `shippingFee`는 `shipping.fee`에 숫자 변환 가능하면 숫자로 저장하고, 원본은 `shipping.feeRaw`와 `payload.source_fields.shippingFee`에 보존한다.
+- `shippingType`은 `shipping.type`, `shipping.typeRaw`, `payload.source_fields.shippingType`에 보존한다.
+- DB 배송비 row는 `market='ownerclan'`으로 저장한다.
+- `shippingType='inAdvance'`는 배송비 금액 타입이 아니라 부담 방식으로 보고 `payload.shipping_payment='prepaid'`로 저장한다.
+- 무료배송은 `shippingType`이 free 계열이거나 `shippingFee`가 0인 경우에만 `is_free_shipping=True`로 저장한다.
 
-1. `category(key: "00000000").descendants`로 전체 카테고리를 가져온다.
-2. `children`이 없는 카테고리를 최하위 카테고리로 판단해 `data/state/categories.json`에 캐시한다.
-3. 캐시된 최하위 카테고리마다 `allItems(category: ..., first: 1000, after: ...)`를 페이지네이션한다.
-4. 상품 `key` 기준으로 중복 제거한 뒤 `normalize_item()` 결과를 PostgreSQL에 저장한다.
+수량별/조건부 배송비 문자열이 내려오면 수집기와 DB 저장 단계에서는 계산하지 않고 원문과 파싱 가능한 구조만 저장한다. 개당 배송비, MOQ 배분, 판매수량 기준 배송비, 마진 계산은 플랫폼 서버에서 처리한다.
 
 ## 재고
 
 옵션별 `quantity`가 있으면 `inventory.stockQuantity`는 `sum(options[].quantity)`로 저장한다. API 원본 수량은 `inventory.apiStockQuantity`에 보존한다.
-
-## raw 샘플
-
-예전 `data/raw/ownerclan_*_raw.json` 파일은 더 이상 생성하지 않는다. raw 샘플은 `product_raw_samples`에 저장하고, 저장 호출당 최대 3개 상품으로 제한한다.
-
-## 파일 기반 상태
-
-- `data/state/categories.json`
-- `data/state/tracked_products.json`
-- `data/state/incremental-state.json`
-
-이 파일들은 실행 입력/재시작 상태이며 상품 결과 저장소가 아니다.

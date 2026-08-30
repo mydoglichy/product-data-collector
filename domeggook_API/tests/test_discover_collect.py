@@ -35,7 +35,8 @@ class FakeClient:
         return {"domeggook": {"item": [{"no": product_id, "title": f"product {product_id}"} for product_id in product_ids]}}
 
 
-def test_discover_uses_all_market_and_sort_combinations_without_real_api(tmp_path):
+def test_discover_uses_all_market_and_sort_combinations_without_real_api(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTGRES_ENABLED", "false")
     api_dir = tmp_path / "domeggook_API"
     api_dir.mkdir()
     client = FakeClient()
@@ -56,7 +57,8 @@ def test_discover_uses_all_market_and_sort_combinations_without_real_api(tmp_pat
     assert tracked["100"]["reasons"] == ["popular", "recent"]
 
 
-def test_collect_details_batches_and_writes_snapshot_without_real_api(tmp_path):
+def test_collect_details_batches_and_writes_snapshot_without_real_api(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTGRES_ENABLED", "false")
     api_dir = tmp_path / "domeggook_API"
     api_dir.mkdir()
     atomic_write_json(

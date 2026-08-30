@@ -12,38 +12,23 @@
 | `product_prices.market='supply'` | `prices.supplyCurrentSupplyPrice` |
 | `product_prices.market='retail'` | `minimumRetailPrice`, `recommendedRetailPrice` |
 | `product_inventory.stock_quantity` | `qty.inventory` |
-| `product_shipping_fees.market='dome'` | `shipping.domeFee` / `shipping.domeFeeRaw` |
-| `product_shipping_fees.market='supply'` | `shipping.supplyFee` / `shipping.supplyFeeRaw` |
+| `product_shipping_fees.market='dome'` | `deli.dome.fee`, `deli.dome.tbl`, `deli.dome.type` |
+| `product_shipping_fees.market='supply'` | `deli.supply.fee`, `deli.supply.tbl`, `deli.supply.type` |
 | `product_raw_samples.payload` | raw 디버깅 샘플 |
 | `product_search_ranks` | category, market, sort, rank |
 
 ## 배송비
 
-도매꾹/도매매 배송비는 별도 row로 저장한다.
+배송비는 도매꾹(`market='dome'`)과 도매매(`market='supply'`) row로 분리한다.
 
-- 도매꾹: `market='dome'`
-- 도매매: `market='supply'`
+- `fee` 컬럼은 API가 단일 숫자로 준 기본 배송비만 저장한다.
+- `deli.dome.tbl`, `deli.supply.tbl` 같은 수량별 조건식은 계산하지 않고 `payload.shipping_fee_raw`와 `payload.shipping_rules`에 저장한다.
+- `deli.pay`는 도매꾹 부담 방식으로, `deli.supply.pay`는 도매매 부담 방식으로 저장한다.
+- `deli.feeExtra.jeju`, `deli.feeExtra.islands`는 `payload.remote_area_fee`에 저장하고 기본 배송비에 합산하지 않는다.
+- 도매매 배송비가 없으면 도매꾹 배송비로 `supply` row를 만들지 않는다.
 
-배송비 부담 방식은 `shipping.feePayer`에서 정규화되어 `product_shipping_fees.payload.shipping_payment`에 보존된다.
+실제 판매수량 기준 배송비, 개당 배송비, MOQ 배분, 마진 계산은 수집기 범위가 아니며 플랫폼 서버에서 처리한다.
 
 ## 재고
 
-현재 API 문서와 parser 기준으로 재고는 `qty.inventory` 하나다. `domeInventory`나 `supplyInventory`처럼 시장별 재고 필드는 사용하지 않는다.
-
-시장별 주문 조건은 별도 필드로 보존한다.
-
-- `inventory.domeMoq`
-- `inventory.domeMaxOrderQuantity`
-- `inventory.domeOrderUnit`
-- `inventory.supplyOrderUnit`
-
-## raw 샘플
-
-예전 `data/raw/domeggook_*_raw.json` 파일은 더 이상 생성하지 않는다. raw 샘플은 `product_raw_samples`에 저장하고, 저장 호출당 최대 3개 상품으로 제한한다.
-
-## 파일 기반 상태
-
-- `data/state/categories.json`
-- `data/state/tracked_products.json`
-
-이 파일들은 실행 입력/캐시이며 상품 결과 저장소가 아니다.
+현재 상세 API는 재고를 `qty.inventory` 단일값으로 제공한다. 가격/배송비처럼 `dome`과 `supply` 재고가 따로 내려오지 않으므로 DB도 상품 단위 단일 재고 row를 저장한다.

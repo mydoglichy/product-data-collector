@@ -345,11 +345,27 @@ def test_numeric_ownerclan_strings_are_cast_for_db_ready_fields():
     assert product["options"][0]["price"] == 1500
     assert product["options"][0]["quantity"] == 5
     assert product["shipping"]["fee"] == 3000
+    assert product["shipping"]["feeRaw"] == "3,000"
+    assert product["shipping"]["typeRaw"] == item["shippingType"]
+    assert product["shipping"]["isFreeShipping"] is False
+    assert product["shipping"]["sourceFields"] == {"shippingFee": "3,000", "shippingType": item["shippingType"]}
     assert product["sourceSpecific"]["boxQuantity"] == 12
     assert product["sourceSpecific"]["guaranteedShippingPeriod"] == 2
     assert product["sourceSpecific"]["certificateInformation"] == [{"type": "KC", "code": "ABC"}]
     assert product["sourceSpecific"]["grade"] == "GOLD1"
     assert product["sourceSpecific"]["gradeDetail"] == {"averageShip": "GOOD"}
+
+
+def test_ownerclan_free_shipping_is_preserved_from_shipping_fields():
+    item = _item("FREE")
+    item["shippingFee"] = 0
+    item["shippingType"] = "free"
+
+    product = normalize_item(item, "2026-08-24T00:00:00+09:00")
+
+    assert product["shipping"]["fee"] == 0
+    assert product["shipping"]["type"] == "free"
+    assert product["shipping"]["isFreeShipping"] is True
 
 
 def _config(tmp_path: Path):

@@ -82,10 +82,16 @@ def test_snapshot_row_splits_domeggook_market_prices_and_shipping() -> None:
                 "recommendedRetailPrice": 1000,
             },
             "shipping": {
+                "feePayer": "P",
+                "domeFeePayer": "P",
                 "domeFee": "100+3000|100+3000",
                 "domeFeeType": "수량별비례",
+                "domeFeeTable": "100+3000|100+3000",
+                "supplyFeePayer": "B",
                 "supplyFee": 3000,
                 "supplyFeeType": "고정배송비",
+                "feeExtraJeju": 3000,
+                "feeExtraIslands": 5000,
             },
         },
     )
@@ -99,18 +105,28 @@ def test_snapshot_row_splits_domeggook_market_prices_and_shipping() -> None:
         {"market": "retail", "price_type": "minimum_retail", "amount": 900},
         {"market": "retail", "price_type": "recommended_retail", "amount": 1000},
     ]
-    assert row["shipping_fee"] == 3000
+    assert row["shipping_fee"] is None
     assert row["shipping_rows"][0]["market"] == "dome"
-    assert row["shipping_rows"][0]["fee"] == 3000
+    assert row["shipping_rows"][0]["fee"] is None
     assert row["shipping_rows"][0]["shipping_type"] == "quantity_proportional"
     assert row["shipping_rows"][0]["shipping_fee_raw"] == "100+3000|100+3000"
     assert row["shipping_rows"][0]["shipping_fee_type_raw"] == "수량별비례"
     assert row["shipping_rows"][0]["additional_fee"] == 3000
+    assert row["shipping_rows"][0]["requires_quantity_calculation"] is True
+    assert row["shipping_rows"][0]["shipping_payment"] == "prepaid"
     assert row["shipping_rows"][0]["payload"]["domeFee"] == "100+3000|100+3000"
-    assert row["shipping_rows"][0]["payload"]["shipping_fee"] == 3000
+    assert row["shipping_rows"][0]["payload"]["shipping_fee"] is None
+    assert row["shipping_rows"][0]["payload"]["remote_area_fee"] == {"jeju": 3000, "islands": 5000}
+    assert row["shipping_rows"][0]["payload"]["source_fields"] == {
+        "fee": "100+3000|100+3000",
+        "type": "수량별비례",
+        "tbl": "100+3000|100+3000",
+        "pay": "P",
+    }
     assert row["shipping_rows"][1]["market"] == "supply"
     assert row["shipping_rows"][1]["fee"] == 3000
     assert row["shipping_rows"][1]["shipping_type"] == "fixed"
+    assert row["shipping_rows"][1]["shipping_payment"] == "collect"
     assert row["shipping_rows"][1]["shipping_fee_raw"] == 3000
     assert row["shipping_rows"][1]["shipping_fee_type_raw"] == "고정배송비"
 
@@ -157,7 +173,7 @@ def test_snapshot_row_parses_shipping_payment_separately_from_fee() -> None:
 
     assert row is not None
     shipping = row["shipping_rows"][0]
-    assert shipping["fee"] == 3500
+    assert shipping["fee"] is None
     assert shipping["shipping_type"] == "quantity_tiered"
     assert shipping["shipping_payment"] == "collect"
     assert shipping["payload"]["shipping_payment"] == "collect"
@@ -166,6 +182,61 @@ def test_snapshot_row_parses_shipping_payment_separately_from_fee() -> None:
         {"min_quantity": 1, "fee": 3500},
         {"min_quantity": 20, "fee": 5500},
     ]
+
+
+def test_snapshot_row_preserves_ownerclan_shipping_without_domeggook_fallback() -> None:
+    row = _snapshot_row(
+        "ownerclan",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "owner-shipping",
+            "prices": {"currentSupplyPrice": 1000},
+            "shipping": {
+                "fee": 3000,
+                "feeRaw": "3,000",
+                "type": "inAdvance",
+                "typeRaw": "inAdvance",
+                "isFreeShipping": False,
+                "sourceFields": {"shippingFee": "3,000", "shippingType": "inAdvance"},
+            },
+        },
+    )
+
+    assert row is not None
+    assert row["is_free_shipping"] is False
+    assert row["shipping_rows"] == [
+        {
+            "market": "ownerclan",
+            "fee": 3000,
+            "shipping_type": "unknown",
+            "shipping_payment": "prepaid",
+            "shipping_fee": 3000,
+            "shipping_fee_raw": "3,000",
+            "shipping_fee_type_raw": "inAdvance",
+            "requires_quantity_calculation": False,
+            "payload": row["shipping_rows"][0]["payload"],
+        }
+    ]
+    assert row["shipping_rows"][0]["payload"]["source_fields"] == {"shippingFee": "3,000", "shippingType": "inAdvance"}
+
+
+def test_snapshot_row_does_not_create_supply_shipping_from_dome_fallback() -> None:
+    row = _snapshot_row(
+        "domeggook",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "dome-only",
+            "shipping": {
+                "feePayer": "P",
+                "domeFee": 3000,
+                "domeFeeType": "고정배송비",
+            },
+        },
+    )
+
+    assert row is not None
+    assert [shipping["market"] for shipping in row["shipping_rows"]] == ["dome"]
+    assert row["shipping_rows"][0]["payload"]["source_fields"]["pay"] == "P"
 
 
 def test_save_product_snapshots_if_enabled_skips_when_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

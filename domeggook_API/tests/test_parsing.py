@@ -55,8 +55,9 @@ def test_real_detail_nested_shape_is_parsed():
                     "deli": {
                         "method": "택배",
                         "pay": "선결제",
+                        "feeExtra": {"jeju": "3,000", "islands": "5,000"},
                         "dome": {"fee": 3000, "type": "fixed"},
-                        "supply": {"fee": 2500, "type": "fixed"},
+                        "supply": {"fee": 2500, "type": "fixed", "pay": "착불"},
                         "wating": "2",
                         "sendAvg": "1.5",
                         "fastDeli": "Y",
@@ -81,6 +82,11 @@ def test_real_detail_nested_shape_is_parsed():
     assert product["prices"]["supplyCurrentSupplyPrice"] == 1700
     assert product["inventory"]["stockQuantity"] == 999
     assert product["shipping"]["domeFee"] == 3000
+    assert product["shipping"]["domeFeePayer"] == "선결제"
+    assert product["shipping"]["supplyFeePayer"] == "착불"
+    assert product["shipping"]["feeExtraJeju"] == 3000
+    assert product["shipping"]["feeExtraIslands"] == 5000
+    assert product["shipping"]["remoteAreaFee"] == {"jeju": 3000, "islands": 5000}
     assert product["markets"]["supplyOnSale"] == "Y"
     assert product["seller"]["nickname"] == "판매자"
     assert product["category"]["code"] == "1010"
