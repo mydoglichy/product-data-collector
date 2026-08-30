@@ -19,7 +19,7 @@ POSTGRES_PASSWORD=...
 
 ## PostgreSQL 테이블
 
-스키마 생성과 마이그레이션은 [postgres_storage.py](postgres_storage.py)의 `init_schema()`가 담당합니다.
+스키마 생성과 마이그레이션은 [postgres_storage.py](postgres_storage.py)의 `init_schema()`가 담당합니다. 전체 컬럼 명세는 [DB_FIELD_SPEC.md](DB_FIELD_SPEC.md)에 정리되어 있습니다.
 
 | 테이블 | 용도 |
 | --- | --- |

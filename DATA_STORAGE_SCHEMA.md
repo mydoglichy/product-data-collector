@@ -1,8 +1,10 @@
 # 데이터 저장 스키마
 
-현재 운영 수집 결과는 PostgreSQL에 저장한다. 예전 JSON/JSONL 산출물은 더 이상 상품 데이터의 기준 저장소가 아니며, 수집기는 product snapshot, raw sample, search rank, summary, latest cache, product history, collection run JSON 파일을 생성하지 않는다.
+현재 운영 수집 결과는 PostgreSQL에 저장한다. 예전 JSON/JSONL 산출물은 더 이상 상품 데이터의 기준 저장소가 아니며, 수집기는 product snapshot, raw sample, search rank, summary, latest cache, product history, collection run JSON/JSONL 파일을 생성하지 않는다.
 
 스키마 생성과 보강은 [postgres_storage.py](postgres_storage.py)의 `init_schema()`에서 수행한다.
+
+이 문서는 저장 구조 개요다. 모든 테이블의 전체 컬럼, 타입, null 여부, 기본값, 제약 조건, 인덱스는 [DB_FIELD_SPEC.md](DB_FIELD_SPEC.md)를 기준으로 확인한다.
 
 ## 공통 저장 흐름
 
@@ -18,6 +20,7 @@
 플랫폼별 상품 master와 최신 정규화 payload를 저장한다.
 
 - unique key: `(platform, external_product_id)`
+- `product_name`, `product_url`, `image_url`: 조회 편의를 위한 최신 대표값
 - `current_payload`: raw, 추적 query, 이미지 query 등 volatile 값을 제거한 최신 payload
 - `comparable_payload`: 변경 감지에 쓰는 section만 남긴 payload
 - `comparable_fingerprint`: `comparable_payload`의 SHA-256 fingerprint
@@ -31,6 +34,9 @@
 - unique key: `(product_id, collected_at, market, price_type)`
 - `market`: `coupang`, `ownerclan`, `dome`, `supply`, `retail` 등
 - `price_type`: `primary`, `current_supply`, `fixed`, `minimum_retail`, `recommended_retail`
+- `amount`: 숫자로 변환 가능한 가격
+- `currency`: 현재 기본값 `KRW`
+- `payload`: 가격 section 전체
 - 조건부 가격 문자열은 숫자 컬럼에 강제로 넣지 않고 `payload`에 보존한다.
 
 도매꾹/도매매 가격 저장:
@@ -59,7 +65,7 @@
 - `fee`: 기본 수량 1 기준으로 계산 가능한 배송비
 - `shipping_type`: `fixed`, `quantity_proportional`, `quantity_tiered`, `free`, `unknown`
 - `is_free_shipping`: source payload의 무료배송 여부
-- `payload`: 배송 section과 파서 결과
+- `payload`: 배송 section과 파서 결과. 배송비 부담 방식과 도서산간 추가배송비도 이 payload에 보존한다.
 
 도매꾹/도매매 배송비는 `market='dome'`, `market='supply'` row로 분리한다.
 
@@ -79,6 +85,7 @@
 
 - 최초 저장: `change_type='initial'`
 - 이후 변경: `change_type='update'`
+- `before_fingerprint`, `after_fingerprint`: 변경 전후 fingerprint
 - `before_payload`, `after_payload`: 변경 전후 comparable payload
 
 ## `product_raw_samples`
@@ -96,7 +103,7 @@
 discovery/search에서 발견한 상품 순위 이력이다.
 
 - unique key: `(platform, collected_at, market, sort, external_product_id, rank)`
-- 도매꾹/도매매: category, market, sort, reason, product id, rank 저장
+- 도매꾹/도매매: keyword, category, market, sort, reason, product id, rank 저장
 - 오너클랜: 저장하지 않는다. Seller GraphQL API에서 인기순, 판매량순, 랭킹 순위 의미의 상품 순위 데이터를 기준으로 제공하지 않기 때문이다.
 
 ## 파일 기반 상태
