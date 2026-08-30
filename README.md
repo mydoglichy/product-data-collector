@@ -29,7 +29,7 @@ POSTGRES_PASSWORD=...
 | `product_shipping_fees` | 수집 시점별 배송비 snapshot |
 | `product_change_history` | 비교 대상 payload fingerprint 변경 이력 |
 | `product_raw_samples` | 디버깅용 raw 샘플, 저장 호출당 최대 3개 상품 |
-| `product_search_ranks` | discovery/search 순위 이력 |
+| `product_search_ranks` | 순위 의미가 있는 플랫폼의 discovery/search 순위 이력 |
 
 도매꾹/도매매는 가격과 배송비를 `market='dome'`, `market='supply'` row로 분리합니다. 재고는 API가 `qty.inventory` 단일 재고만 제공하므로 현재는 상품 단위 단일 row로 저장합니다.
 
@@ -43,15 +43,19 @@ POSTGRES_PASSWORD=...
 - `*_API/keywords.txt`
 - `domeggook_API/data/state/categories.json`
 - `domeggook_API/data/state/tracked_products.json`
+- `ownerclan_API/data/state/categories.json`
 - `ownerclan_API/data/state/tracked_products.json`
 - `ownerclan_API/data/state/incremental-state.json`
 - `coupang_API/data/state/product_search_checkpoint.json`
+
+오너클랜은 인기순, 판매량순, 랭킹 순위 API를 기준으로 저장하지 않습니다. 기본 수집은 오너클랜 카테고리 트리를 캐시한 뒤 최하위 카테고리별 `allItems(category: ...)` 페이지를 순회해 상품을 PostgreSQL에 저장합니다.
 
 ## 실행
 
 ```powershell
 python -m coupang_API
 python -m ownerclan_API.main
+python -m ownerclan_API.main --refresh-categories
 python -m ownerclan_API.sync_incremental
 python -m domeggook_API.main
 ```
@@ -59,7 +63,7 @@ python -m domeggook_API.main
 소량 검증:
 
 ```powershell
-python -m ownerclan_API.main --limit 1 --dry-run
+python -m ownerclan_API.main --refresh-categories --limit 1 --dry-run
 python -m domeggook_API.main --limit 1 --dry-run
 ```
 

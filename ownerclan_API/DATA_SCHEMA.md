@@ -17,7 +17,17 @@
 | `product_shipping_fees.fee` | `shipping.fee` |
 | `product_shipping_fees.shipping_type` | 정규화된 배송비 타입 |
 | `product_raw_samples.payload` | raw 디버깅 샘플 |
-| `product_search_ranks` | keyword discovery 순위 |
+
+오너클랜은 `product_search_ranks`에 저장하지 않는다. Seller API에서 인기순, 판매량순, 랭킹 순위 의미의 상품 순위 데이터를 제공하지 않으므로 검색 결과의 순번을 랭킹 데이터로 취급하지 않는다.
+
+## 수집 범위
+
+기본 수집은 최하위 카테고리 기준 전체 순회다.
+
+1. `category(key: "00000000").descendants`로 전체 카테고리를 가져온다.
+2. `children`이 없는 카테고리를 최하위 카테고리로 판단해 `data/state/categories.json`에 캐시한다.
+3. 캐시된 최하위 카테고리마다 `allItems(category: ..., first: 1000, after: ...)`를 페이지네이션한다.
+4. 상품 `key` 기준으로 중복 제거한 뒤 `normalize_item()` 결과를 PostgreSQL에 저장한다.
 
 ## 재고
 
@@ -29,6 +39,7 @@
 
 ## 파일 기반 상태
 
+- `data/state/categories.json`
 - `data/state/tracked_products.json`
 - `data/state/incremental-state.json`
 

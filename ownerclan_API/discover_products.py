@@ -15,7 +15,6 @@ from .queries import all_items_query
 from .rate_limiter import RateLimiter
 from .storage import load_tracked_products, merge_discovered_product, save_tracked_products
 from .time_utils import now_iso
-from postgres_storage import save_search_ranks_if_enabled
 
 
 LOGGER = logging.getLogger("ownerclan_API.discover_products")
@@ -35,7 +34,6 @@ def discover(
     client = client or make_client(project_root, config)
 
     tracked = load_tracked_products(config.output.tracked_products_path)
-    rank_records: list[dict[str, Any]] = []
     discovered = 0
     new_products = 0
     failures = 0
@@ -70,25 +68,9 @@ def discover(
                 discovered += 1
                 if merge_discovered_product(tracked, product_key, keyword, stored_sort_by, collected_at):
                     new_products += 1
-                rank_records.append(
-                    {
-                        "collectedAt": collected_at,
-                        "keyword": keyword,
-                        "sortBy": stored_sort_by,
-                        "productId": product_key,
-                        "productKey": product_key,
-                        "rank": rank,
-                    }
-                )
 
     if not dry_run:
         save_tracked_products(config.output.tracked_products_path, tracked)
-        save_search_ranks_if_enabled(
-            project_root=project_root,
-            platform="ownerclan",
-            records=rank_records,
-            logger=LOGGER,
-        )
 
     return {
         "keywordCount": len(keywords),
