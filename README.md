@@ -20,6 +20,15 @@
 | `product_raw_samples` | 디버깅용 raw 샘플 |
 | `product_search_ranks` | 순위 의미가 있는 discovery/search 이력 |
 
+### `product_search_ranks` 저장 정책
+
+- 도매꾹/도매매 `da`는 공식 의미가 상품정보 등록/수정일 최근순인 최근등록순이므로 랭킹 데이터로 저장하지 않습니다.
+- `ha`(인기상품순), `rd`(도매꾹랭킹순)처럼 실제 순위 분석에 사용하는 정렬만 `product_search_ranks`에 저장합니다.
+- `aa`, `ad`, `sd`, `qa`, `qd`, `se`는 가격, 신규판매자, 판매단위, 정확도 기준의 단순 정렬이므로 현재 순위 이력 저장 대상이 아닙니다.
+- `rank`는 페이지 내 순번이 아니라 전체 결과 기준 순위이며, `currentPage`와 `itemsPerPage`로 계산합니다.
+- rank가 없는 데이터에는 `0`을 사용하지 않고 저장 대상에서 제외합니다.
+- 순위 이력은 상품번호 단독 unique가 아니며 수집 시각, keyword, category, market, sort, rank 조건별로 보존합니다.
+
 배송비 row는 도매꾹 `market='dome'`, 도매매 `market='supply'`, 오너클랜 `market='ownerclan'`으로 구분합니다. `product_shipping_fees.fee`는 API/정규화 payload에서 단일 숫자로 확인되는 기본 배송비 원본값이며, 수량별비례/수량별차등 조건식은 계산하지 않고 `NULL`과 `payload.shipping_rules`로 저장합니다.
 
 자세한 컬럼 의미는 [DB_FIELD_SPEC.md](DB_FIELD_SPEC.md), 저장 흐름은 [DATA_STORAGE_SCHEMA.md](DATA_STORAGE_SCHEMA.md)를 기준으로 확인합니다.

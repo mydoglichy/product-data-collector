@@ -9,6 +9,15 @@
 3. raw 샘플은 `save_product_raw_samples_if_enabled()`가 `product_raw_samples`에 저장한다.
 4. 순위 의미가 있는 discovery/search 결과만 `save_search_ranks_if_enabled()`가 `product_search_ranks`에 저장한다.
 
+## `product_search_ranks`
+
+- 도매꾹/도매매 `da`는 공식 의미가 상품정보 등록/수정일 최근순인 최근등록순이므로 랭킹 데이터로 저장하지 않는다.
+- `ha`(인기상품순), `rd`(도매꾹랭킹순)처럼 실제 순위 분석에 사용하는 정렬만 저장한다.
+- `aa`, `ad`, `sd`, `qa`, `qd`, `se`는 현재 프로젝트에서는 순위 이력 저장 대상이 아니다.
+- `rank`는 전체 결과 기준 순위다. 여러 페이지 수집 시 `(currentPage - 1) * itemsPerPage + 페이지 내 순번`으로 계산한다.
+- rank가 없는 데이터는 저장하지 않으며 `rank=0`으로 대체하지 않는다.
+- 순위 이력 unique 기준은 상품번호 단독이 아니다. `(platform, collected_at, keyword, category_code, market, sort, external_product_id, rank)`로 같은 상품도 수집 시각, keyword, category, market, sort가 다르면 별도 이력으로 보존한다.
+
 ## `product_shipping_fees`
 
 수집 시점별 배송비 snapshot이다.
@@ -45,5 +54,7 @@
 `shippingType='inAdvance'` 같은 부담 방식 성격의 값은 `payload.shipping_payment='prepaid'`로 정규화해 보존하고, `shipping_type`은 계산 가능한 배송비 타입으로 확정할 수 없으면 `unknown`으로 둔다. 무료배송은 `shippingType`이 free 계열이거나 `shippingFee`가 0인 경우에만 `is_free_shipping=True`로 보존한다.
 
 ## 스키마 변경
+
+현재 `init_schema()`는 `product_search_ranks`에서 도매꾹/도매매 비랭킹 sort(`da`, `aa`, `ad`, `sd`, `qa`, `qd`, `se`)와 `rank <= 0`인 기존 row를 제거하고, unique 기준을 `(platform, collected_at, keyword, category_code, market, sort, external_product_id, rank)`로 보강한다.
 
 이번 배송비 정책 변경은 기존 `product_shipping_fees.payload` JSONB에 원본과 구조화 정보를 보강하는 방식으로 처리한다. 새 DB 컬럼은 추가하지 않는다.

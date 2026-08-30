@@ -15,7 +15,16 @@
 | `product_shipping_fees.market='dome'` | `deli.dome.fee`, `deli.dome.tbl`, `deli.dome.type` |
 | `product_shipping_fees.market='supply'` | `deli.supply.fee`, `deli.supply.tbl`, `deli.supply.type` |
 | `product_raw_samples.payload` | raw 디버깅 샘플 |
-| `product_search_ranks` | category, market, sort, rank |
+| `product_search_ranks` | rank 의미가 있는 category, market, sort, 전체 결과 기준 rank |
+
+## 순위 이력
+
+- `da`는 공식적으로 상품정보 등록/수정일 최근순인 최근등록순이므로 `product_search_ranks`에 저장하지 않는다.
+- `ha`(인기상품순), `rd`(도매꾹랭킹순)처럼 실제 순위 분석에 사용하는 정렬만 저장한다.
+- `aa`, `ad`, `sd`, `qa`, `qd`, `se`는 현재 프로젝트에서는 순위 이력 저장 대상이 아니다.
+- `rank`는 페이지 내 순번이 아니라 전체 결과 기준 순위다. `(currentPage - 1) * itemsPerPage + 페이지 내 순번`으로 계산한다.
+- rank가 없는 데이터에는 `0`을 사용하지 않는다.
+- 순위 이력은 상품번호 단독 unique가 아니며 수집 시각, keyword, category, market, sort 조건별로 보존한다.
 
 ## 배송비
 

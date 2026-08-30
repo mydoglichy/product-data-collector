@@ -15,6 +15,12 @@ def parse_list_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in _as_list(items) if isinstance(item, dict)]
 
 
+def parse_list_header(payload: dict[str, Any]) -> dict[str, Any]:
+    root = _root(payload)
+    header = root.get("header") if isinstance(root, dict) else None
+    return header if isinstance(header, dict) else {}
+
+
 def parse_product_id(item: dict[str, Any]) -> str | None:
     for key in ("no", "itemNo", "itemNoOrigin", "productId", "productNo"):
         value = item.get(key)

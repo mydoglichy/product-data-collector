@@ -77,8 +77,31 @@ raw 디버깅 샘플을 저장한다. Unique: `(platform, collected_at, external
 
 ## `product_search_ranks`
 
-순위 의미가 있는 discovery/search 결과를 저장한다. Unique: `(platform, collected_at, market, sort, external_product_id, rank)`.
+순위 의미가 있는 discovery/search 결과만 저장한다.
+
+| 컬럼 | 타입 | Null | 설명 |
+| --- | --- | --- | --- |
+| `platform` | `TEXT` | No | 수집 플랫폼. 도매꾹/도매매는 `domeggook` |
+| `collected_at` | `TIMESTAMPTZ` | No | 리스트 수집 시각 |
+| `keyword` | `TEXT` | No | 검색어 또는 discovery 카테고리명. 없으면 빈 문자열 |
+| `category_code` | `TEXT` | No | 카테고리 코드. 없으면 빈 문자열 |
+| `category_name` | `TEXT` | Yes | 카테고리명 |
+| `category_path` | `JSONB` | No | 카테고리 경로 |
+| `market` | `TEXT` | No | `dome`, `supply` 등 API market |
+| `sort` | `TEXT` | No | API 실제 정렬 코드. 응답 `header.sort`가 있으면 요청값보다 우선 저장 |
+| `reason` | `TEXT` | Yes | 사람이 읽는 수집 이유/라벨 |
+| `external_product_id` | `TEXT` | No | 외부 상품번호 |
+| `rank` | `INTEGER` | No | 전체 결과 기준 순위 |
+| `payload` | `JSONB` | No | 저장 record 원본 |
+
+도매꾹/도매매 `da`는 공식 의미가 상품정보 등록/수정일 최근순인 최근등록순이므로 랭킹 데이터로 저장하지 않는다. `ha`(인기상품순), `rd`(도매꾹랭킹순)처럼 실제 순위 분석에 사용하는 정렬만 저장한다. `aa`, `ad`, `sd`, `qa`, `qd`, `se`는 현재 프로젝트에서는 가격, 신규판매자, 판매단위, 정확도 기준의 단순 정렬로 보고 순위 이력 저장 대상에서 제외한다.
+
+`rank`는 페이지 내 순번이 아니라 전체 결과 기준 순위이며 `(currentPage - 1) * itemsPerPage + 페이지 내 순번`으로 계산한다. rank가 없는 데이터에는 `0`을 사용하지 않고 저장하지 않는다.
+
+Unique: `(platform, collected_at, keyword, category_code, market, sort, external_product_id, rank)`. 순위 이력은 상품번호 단독 unique가 아니며, 같은 상품도 다른 수집 시각, keyword, category, market, sort 조건에서 각각 보존된다.
 
 ## 스키마 보강
 
-현재 `init_schema()`는 기존 DB 호환을 위해 `product_prices.market`, `product_shipping_fees.market`, market 포함 unique constraint, 기존 default row backfill을 처리한다. 이번 배송비 정책 변경은 payload 의미 보강으로 충분하므로 새 컬럼은 추가하지 않는다.
+현재 `init_schema()`는 기존 DB 호환을 위해 `product_prices.market`, `product_shipping_fees.market`, market 포함 unique constraint, 기존 default row backfill을 처리한다.
+
+`product_search_ranks`는 도매꾹/도매매 비랭킹 sort(`da`, `aa`, `ad`, `sd`, `qa`, `qd`, `se`)와 `rank <= 0`인 기존 row를 제거하고, unique 기준을 `(platform, collected_at, keyword, category_code, market, sort, external_product_id, rank)`로 보강한다.

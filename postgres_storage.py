@@ -22,6 +22,7 @@ from shipping_fees import parse_shipping_fee
 
 
 TRUE_VALUES = {"1", "true", "yes", "y", "on"}
+DOMEGGOOK_RANKED_SORTS = {"ha", "rd"}
 
 @dataclass(frozen=True)
 class PostgresConfig:
@@ -167,8 +168,8 @@ def init_schema(connection: Connection[Any]) -> None:
             id BIGSERIAL PRIMARY KEY,
             platform TEXT NOT NULL,
             collected_at TIMESTAMPTZ NOT NULL,
-            keyword TEXT NULL,
-            category_code TEXT NULL,
+            keyword TEXT NOT NULL DEFAULT '',
+            category_code TEXT NOT NULL DEFAULT '',
             category_name TEXT NULL,
             category_path JSONB NOT NULL DEFAULT '[]'::jsonb,
             market TEXT NOT NULL DEFAULT 'default',
@@ -178,9 +179,33 @@ def init_schema(connection: Connection[Any]) -> None:
             rank INTEGER NOT NULL,
             payload JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            CONSTRAINT product_search_ranks_platform_collected_market_sort_product_rank_key
-                UNIQUE (platform, collected_at, market, sort, external_product_id, rank)
+            CONSTRAINT product_search_ranks_history_key
+                UNIQUE (platform, collected_at, keyword, category_code, market, sort, external_product_id, rank)
         )
+        """,
+        "ALTER TABLE product_search_ranks ADD COLUMN IF NOT EXISTS keyword TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE product_search_ranks ADD COLUMN IF NOT EXISTS category_code TEXT NOT NULL DEFAULT ''",
+        "UPDATE product_search_ranks SET keyword = '' WHERE keyword IS NULL",
+        "UPDATE product_search_ranks SET category_code = '' WHERE category_code IS NULL",
+        "ALTER TABLE product_search_ranks ALTER COLUMN keyword SET DEFAULT ''",
+        "ALTER TABLE product_search_ranks ALTER COLUMN category_code SET DEFAULT ''",
+        "ALTER TABLE product_search_ranks ALTER COLUMN keyword SET NOT NULL",
+        "ALTER TABLE product_search_ranks ALTER COLUMN category_code SET NOT NULL",
+        "DELETE FROM product_search_ranks WHERE rank <= 0",
+        "DELETE FROM product_search_ranks WHERE platform = 'domeggook' AND sort NOT IN ('ha', 'rd')",
+        "ALTER TABLE product_search_ranks DROP CONSTRAINT IF EXISTS product_search_ranks_platform_collected_market_sort_product_rank_key",
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'product_search_ranks_history_key'
+            ) THEN
+                ALTER TABLE product_search_ranks
+                ADD CONSTRAINT product_search_ranks_history_key
+                UNIQUE (platform, collected_at, keyword, category_code, market, sort, external_product_id, rank);
+            END IF;
+        END $$;
         """,
         "ALTER TABLE product_prices ADD COLUMN IF NOT EXISTS market TEXT NOT NULL DEFAULT 'default'",
         "ALTER TABLE product_shipping_fees ADD COLUMN IF NOT EXISTS market TEXT NOT NULL DEFAULT 'default'",
@@ -512,28 +537,7 @@ def save_search_ranks_if_enabled(
     if not postgres_enabled(project_root):
         return 0
 
-    rows: list[dict[str, Any]] = []
-    for record in records:
-        product_id = record.get("productId")
-        collected_at = record.get("collectedAt")
-        if product_id in (None, "") or collected_at in (None, ""):
-            continue
-        rows.append(
-            {
-                "platform": platform,
-                "collected_at": _parse_datetime(str(collected_at)),
-                "keyword": _text_or_none(record.get("keyword")),
-                "category_code": _text_or_none(record.get("categoryCode")),
-                "category_name": _text_or_none(record.get("categoryName")),
-                "category_path": record.get("categoryPath") if isinstance(record.get("categoryPath"), list) else [],
-                "market": _text_or_none(record.get("market")) or "default",
-                "sort": _text_or_none(record.get("sort") or record.get("sortBy")) or "",
-                "reason": _text_or_none(record.get("reason")),
-                "external_product_id": str(product_id),
-                "rank": int(record.get("rank") or 0),
-                "payload": record,
-            }
-        )
+    rows = _search_rank_rows(platform, records)
     if not rows:
         return 0
 
@@ -558,9 +562,7 @@ def save_search_ranks_if_enabled(
                     payload
                 )
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (platform, collected_at, market, sort, external_product_id, rank) DO UPDATE SET
-                    keyword = EXCLUDED.keyword,
-                    category_code = EXCLUDED.category_code,
+                ON CONFLICT (platform, collected_at, keyword, category_code, market, sort, external_product_id, rank) DO UPDATE SET
                     category_name = EXCLUDED.category_name,
                     category_path = EXCLUDED.category_path,
                     reason = EXCLUDED.reason,
@@ -585,6 +587,46 @@ def save_search_ranks_if_enabled(
     if logger is not None:
         logger.info("saved PostgreSQL search ranks count=%d", len(rows))
     return len(rows)
+
+
+def _search_rank_rows(platform: str, records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for record in records:
+        product_id = record.get("productId")
+        collected_at = record.get("collectedAt")
+        sort = _text_or_none(record.get("sort") or record.get("sortBy")) or ""
+        rank = _positive_int(record.get("rank"))
+        if product_id in (None, "") or collected_at in (None, "") or rank is None:
+            continue
+        if platform == "domeggook" and sort not in DOMEGGOOK_RANKED_SORTS:
+            continue
+        rows.append(
+            {
+                "platform": platform,
+                "collected_at": _parse_datetime(str(collected_at)),
+                "keyword": _text_or_none(record.get("keyword")) or "",
+                "category_code": _text_or_none(record.get("categoryCode")) or "",
+                "category_name": _text_or_none(record.get("categoryName")),
+                "category_path": record.get("categoryPath") if isinstance(record.get("categoryPath"), list) else [],
+                "market": _text_or_none(record.get("market")) or "default",
+                "sort": sort,
+                "reason": _text_or_none(record.get("reason")),
+                "external_product_id": str(product_id),
+                "rank": rank,
+                "payload": record,
+            }
+        )
+    return rows
+
+
+def _positive_int(value: Any) -> int | None:
+    if isinstance(value, bool) or value in (None, ""):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
 
 
 def _save_snapshot(connection: Connection[Any], row: dict[str, Any]) -> None:

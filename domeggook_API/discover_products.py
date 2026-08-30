@@ -9,13 +9,14 @@ from .api_client import DomeggookApiError, DomeggookClient, ListRequest, create_
 from .categories import load_or_refresh_categories
 from .config import DomeggookConfig, find_project_root, load_api_keys, load_config
 from .logging_config import configure_logging
-from .parsing import parse_list_items, parse_product_id
+from .parsing import parse_list_header, parse_list_items, parse_product_id
 from .storage import load_tracked_products, merge_discovered_product, save_tracked_products
 from .time_utils import now_iso
 from postgres_storage import save_search_ranks_if_enabled
 
 
 LOGGER = logging.getLogger("domeggook_API.discover_products")
+RANKED_SORTS = {"ha", "rd"}
 
 
 def discover(
@@ -56,6 +57,7 @@ def discover(
                         )
                     )
                     items = parse_list_items(payload)
+                    header = parse_list_header(payload)
                 except DomeggookApiError as exc:
                     failures += 1
                     LOGGER.error(
@@ -68,7 +70,13 @@ def discover(
                     )
                     continue
 
-                for rank, item in enumerate(items, start=1):
+                effective_sort = _text_or_none(header.get("sort")) or sort_code
+                current_page = _positive_int(header.get("currentPage")) or 1
+                items_per_page = _positive_int(header.get("itemsPerPage")) or config.discovery.items_per_keyword
+                should_save_rank = effective_sort in RANKED_SORTS
+
+                for index, item in enumerate(items, start=1):
+                    rank = _global_rank(current_page, items_per_page, index)
                     product_id = parse_product_id(item)
                     if not product_id:
                         LOGGER.warning(
@@ -83,20 +91,22 @@ def discover(
                     discovered += 1
                     if merge_discovered_product(tracked, product_id, category.name, market, reason, collected_at):
                         new_products += 1
-                    search_rank_records.append(
-                        {
-                            "collectedAt": collected_at,
-                            "keyword": category.name,
-                            "categoryCode": category.code,
-                            "categoryName": category.name,
-                            "categoryPath": list(category.path),
-                            "market": market,
-                            "sort": sort_code,
-                            "reason": reason,
-                            "productId": product_id,
-                            "rank": rank,
-                        }
-                    )
+                    if should_save_rank:
+                        search_rank_records.append(
+                            {
+                                "collectedAt": collected_at,
+                                "keyword": category.name,
+                                "categoryCode": category.code,
+                                "categoryName": category.name,
+                                "categoryPath": list(category.path),
+                                "market": market,
+                                "sort": effective_sort,
+                                "requestedSort": sort_code,
+                                "reason": reason,
+                                "productId": product_id,
+                                "rank": rank,
+                            }
+                        )
 
     if not dry_run:
         save_tracked_products(tracked_path, tracked)
@@ -114,6 +124,24 @@ def discover(
         "trackedCount": len(tracked),
         "failureCount": failures,
     }
+
+
+def _global_rank(current_page: int, items_per_page: int, index: int) -> int:
+    return (current_page - 1) * items_per_page + index
+
+
+def _positive_int(value: object) -> int | None:
+    try:
+        parsed = int(str(value))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _text_or_none(value: object) -> str | None:
+    if value in (None, ""):
+        return None
+    return str(value)
 
 
 def main(argv: list[str] | None = None) -> int:

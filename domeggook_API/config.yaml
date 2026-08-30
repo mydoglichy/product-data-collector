@@ -4,6 +4,7 @@ discovery:
     - supply
   sorts:
     popular: ha
+    ranking: rd
     recent: da
   items_per_keyword: 20
 
