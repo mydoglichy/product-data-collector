@@ -59,7 +59,14 @@ def normalize_item(item: dict[str, Any], collected_at: str) -> dict[str, Any]:
         "options": options,
         "shipping": {
             "fee": number_or_original(item.get("shippingFee")),
+            "feeRaw": item.get("shippingFee"),
             "type": item.get("shippingType"),
+            "typeRaw": item.get("shippingType"),
+            "isFreeShipping": infer_free_shipping(item.get("shippingFee"), item.get("shippingType")),
+            "sourceFields": {
+                "shippingFee": item.get("shippingFee"),
+                "shippingType": item.get("shippingType"),
+            },
         },
         "category": {
             "code": category.get("key"),
@@ -145,6 +152,25 @@ def number_or_original(value: Any) -> int | float | Any:
         return value
     normalized = text.replace(",", "")
     return float(normalized) if "." in normalized else int(normalized)
+
+
+def infer_free_shipping(shipping_fee: Any, shipping_type: Any) -> bool | None:
+    if _is_free_text(shipping_type):
+        return True
+    normalized_fee = number_or_original(shipping_fee)
+    if isinstance(normalized_fee, bool) or normalized_fee is None:
+        return None
+    if isinstance(normalized_fee, (int, float)):
+        return normalized_fee == 0
+    if _is_free_text(normalized_fee):
+        return True
+    return None
+
+
+def _is_free_text(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    return value.strip().lower() in {"free", "free_shipping", "freeshipping", "무료배송"}
 
 
 def normalize_status(value: str | None) -> str | None:

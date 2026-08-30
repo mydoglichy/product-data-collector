@@ -740,6 +740,7 @@ def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> 
     inventory = _section_or_empty(comparable, current, "inventory")
     shipping = _section_or_empty(comparable, current, "shipping")
     shipping_payload = _shipping_payload(comparable, current)
+    shipping_rows = _shipping_rows(platform, shipping_payload)
     return {
         "platform": platform,
         "external_product_id": external_id,
@@ -756,9 +757,9 @@ def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> 
         "primary_price": _decimal_or_none(_extract_primary_price(prices, current)),
         "price_rows": _price_rows(platform, prices, current),
         "stock_quantity": _decimal_or_none(_first_available_value(inventory, current, "stockQuantity")),
-        "shipping_fee": _shipping_rows(platform, shipping_payload)[0]["fee"],
+        "shipping_fee": shipping_rows[0]["fee"],
         "shipping_type": _text_or_none(_first_value(shipping_payload, "type", "feeType", "domeFeeType", "supplyFeeType")),
-        "shipping_rows": _shipping_rows(platform, shipping_payload),
+        "shipping_rows": shipping_rows,
         "is_free_shipping": _bool_or_none(_first_available_value(shipping, current, "isFreeShipping")),
     }
 
@@ -787,13 +788,13 @@ def _shipping_payload(comparable: dict[str, Any], current: dict[str, Any]) -> di
     comparable_shipping = _object_or_empty(comparable.get("shipping"))
     payload = {
         key: value
-        for key, value in current_shipping.items()
+        for key, value in comparable_shipping.items()
         if _has_value(value)
     }
     payload.update(
         {
             key: value
-            for key, value in comparable_shipping.items()
+            for key, value in current_shipping.items()
             if _has_value(value)
         }
     )
@@ -920,12 +921,11 @@ def _price_rows(platform: str, prices: dict[str, Any], current: dict[str, Any]) 
 
 def _shipping_rows(platform: str, shipping: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    fee_payer = _first_value(shipping, "feePayer", "deliWho", "who")
     if _has_value(shipping.get("domeFee")) or _has_value(shipping.get("domeFeeType")):
         parsed = parse_shipping_fee(
             _first_value(shipping, "domeFeeRaw", "domeFee"),
             shipping.get("domeFeeType"),
-            fee_payer=fee_payer,
+            fee_payer=_first_value(shipping, "domeFeePayer", "feePayer", "deliWho", "who"),
         )
         rows.append(
             {
@@ -940,7 +940,7 @@ def _shipping_rows(platform: str, shipping: dict[str, Any]) -> list[dict[str, An
         parsed = parse_shipping_fee(
             _first_value(shipping, "supplyFeeRaw", "supplyFee"),
             shipping.get("supplyFeeType"),
-            fee_payer=fee_payer,
+            fee_payer=_first_value(shipping, "supplyFeePayer", "feePayer", "deliWho", "who"),
         )
         rows.append(
             {
@@ -954,9 +954,9 @@ def _shipping_rows(platform: str, shipping: dict[str, Any]) -> list[dict[str, An
     if rows:
         return rows
     parsed = parse_shipping_fee(
-        shipping.get("fee"),
+        _first_value(shipping, "feeRaw", "fee"),
         _first_value(shipping, "type", "feeType"),
-        fee_payer=fee_payer,
+        fee_payer=_first_value(shipping, "shippingPayment", "feePayer", "deliWho", "who", "type", "feeType"),
     )
     return [
         {
@@ -973,7 +973,50 @@ def _shipping_row_payload(shipping: dict[str, Any], market: str, parsed: dict[st
     payload = dict(shipping)
     payload["market"] = market
     payload.update(parsed)
+    remote_area_fee = _remote_area_fee(shipping)
+    if remote_area_fee:
+        payload["remote_area_fee"] = remote_area_fee
+    payload["source_fields"] = _shipping_source_fields(shipping, market)
     return payload
+
+
+def _remote_area_fee(shipping: dict[str, Any]) -> dict[str, Any]:
+    fees: dict[str, Any] = {}
+    jeju = _first_value(shipping, "feeExtraJeju")
+    islands = _first_value(shipping, "feeExtraIslands")
+    nested = shipping.get("remoteAreaFee") if isinstance(shipping.get("remoteAreaFee"), dict) else {}
+    jeju = jeju if _has_value(jeju) else _first_value(nested, "jeju")
+    islands = islands if _has_value(islands) else _first_value(nested, "islands")
+    if _has_value(jeju):
+        fees["jeju"] = jeju
+    if _has_value(islands):
+        fees["islands"] = islands
+    return fees
+
+
+def _shipping_source_fields(shipping: dict[str, Any], market: str) -> dict[str, Any]:
+    if market == "dome":
+        return {
+            "fee": _first_value(shipping, "domeFeeRaw", "domeFee"),
+            "type": shipping.get("domeFeeType"),
+            "tbl": shipping.get("domeFeeTable"),
+            "pay": _first_value(shipping, "domeFeePayer", "feePayer", "deliWho", "who"),
+        }
+    if market == "supply":
+        return {
+            "fee": _first_value(shipping, "supplyFeeRaw", "supplyFee"),
+            "type": shipping.get("supplyFeeType"),
+            "tbl": shipping.get("supplyFeeTable"),
+            "pay": _first_value(shipping, "supplyFeePayer", "feePayer", "deliWho", "who"),
+        }
+    source_fields = shipping.get("sourceFields")
+    if isinstance(source_fields, dict):
+        return dict(source_fields)
+    return {
+        "fee": _first_value(shipping, "feeRaw", "fee"),
+        "type": _first_value(shipping, "typeRaw", "type", "feeType"),
+        "pay": _first_value(shipping, "shippingPayment", "feePayer", "deliWho", "who"),
+    }
 
 
 def _json_safe(value: Any) -> Any:
