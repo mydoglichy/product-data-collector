@@ -11,6 +11,7 @@ from .storage import atomic_write_json
 
 
 CATEGORY_CACHE_MAX_AGE_DAYS = 7
+CATEGORY_CACHE_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -40,7 +41,7 @@ def load_or_refresh_categories(
     max_age_days: int = CATEGORY_CACHE_MAX_AGE_DAYS,
     dry_run: bool = False,
 ) -> list[Category]:
-    if _is_cache_fresh(path, max_age_days=max_age_days):
+    if _is_cache_fresh(path, max_age_days=max_age_days) and _is_cache_version_current(path):
         return load_categories(path)
 
     payload = client.get_category_list()
@@ -51,6 +52,7 @@ def load_or_refresh_categories(
             {
                 "generatedAt": datetime.now(timezone.utc).isoformat(),
                 "source": "domeggook",
+                "version": CATEGORY_CACHE_VERSION,
                 "categories": [category.to_json() for category in categories],
             },
         )
@@ -114,7 +116,8 @@ def _walk_category(
     name = _string_or_none(item.get("name"))
     current_path = (*parent_path, name) if name else parent_path
     depth = _category_depth(code)
-    if code and name and depth >= 2 and code not in seen:
+    children = _as_items(item.get("child"))
+    if code and name and depth >= 2 and not children and code not in seen:
         seen.add(code)
         categories.append(
             Category(
@@ -127,7 +130,7 @@ def _walk_category(
             )
         )
 
-    for child in _as_items(item.get("child")):
+    for child in children:
         _walk_category(child, current_path, categories, seen)
 
 
@@ -136,6 +139,15 @@ def _is_cache_fresh(path: Path, *, max_age_days: int) -> bool:
         return False
     modified_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
     return datetime.now(timezone.utc) - modified_at < timedelta(days=max_age_days)
+
+
+def _is_cache_version_current(path: Path) -> bool:
+    try:
+        with path.open("r", encoding="utf-8") as fp:
+            payload = json.load(fp)
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and payload.get("version") == CATEGORY_CACHE_VERSION
 
 
 def _as_items(value: Any) -> list[Any]:

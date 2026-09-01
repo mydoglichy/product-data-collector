@@ -150,6 +150,51 @@ def test_discover_uses_response_sort_for_rank_records(tmp_path, monkeypatch):
     assert saved_records[0]["requestedSort"] == "ha"
 
 
+def test_discover_walks_all_list_pages_until_short_page(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTGRES_ENABLED", "false")
+    (tmp_path / "domeggook_API").mkdir()
+    saved_records = []
+    monkeypatch.setattr(
+        "domeggook_API.discover_products.save_search_ranks_if_enabled",
+        lambda **kwargs: saved_records.extend(kwargs["records"]) or len(kwargs["records"]),
+    )
+
+    class MultiPageClient(FakeClient):
+        def get_item_list(self, request):
+            self.list_requests.append(request)
+            items_by_page = {
+                1: [{"no": "100"}, {"no": "200"}],
+                2: [{"no": "300"}, {"no": "400"}],
+                3: [{"no": "500"}],
+            }
+            return {
+                "domeggook": {
+                    "header": {"currentPage": request.page, "itemsPerPage": 2, "sort": request.sort},
+                    "list": {"item": items_by_page.get(request.page, [])},
+                }
+            }
+
+    config = DomeggookConfig(
+        discovery=DiscoveryConfig(markets=("dome",), sorts={"ranking": "rd"}, items_per_keyword=2),
+        details=DetailsConfig(batch_size=100, raw_sample_limit=20),
+        request=RequestConfig(
+            max_requests_per_minute=120,
+            max_requests_per_hour=9000,
+            max_requests_per_day=14000,
+            timeout_seconds=20,
+            max_retries=3,
+        ),
+        timezone="Asia/Seoul",
+    )
+    client = MultiPageClient()
+
+    result = discover(tmp_path, config, client=client)
+
+    assert [request.page for request in client.list_requests] == [1, 2, 3]
+    assert result["discoveredCount"] == 5
+    assert [record["rank"] for record in saved_records] == [1, 2, 3, 4, 5]
+
+
 def test_da_discovery_products_remain_detail_targets(tmp_path, monkeypatch):
     monkeypatch.setenv("POSTGRES_ENABLED", "false")
     api_dir = tmp_path / "domeggook_API"

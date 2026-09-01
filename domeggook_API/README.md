@@ -19,6 +19,7 @@
 ### 순위 이력
 
 - `da`는 공식적으로 상품정보 등록/수정일 최근순인 최근등록순이므로 `product_search_ranks`에 저장하지 않습니다.
+- discovery는 자식 카테고리가 없는 최하위 카테고리만 대상으로 삼고, 각 카테고리/마켓/정렬 조합의 모든 리스트 페이지를 순회합니다.
 - `da` 리스트 호출, 상품번호 발견, tracked 상품 병합, 상세 수집 대상 포함은 유지합니다.
 - `ha`(인기상품순), `rd`(도매꾹랭킹순)만 현재 순위 분석 저장 대상입니다.
 - `aa`, `ad`, `sd`, `qa`, `qd`, `se`는 가격, 신규판매자, 판매단위, 정확도 정렬이므로 현재 저장 대상이 아닙니다.
@@ -40,7 +41,7 @@
 ## 실행 상태 파일
 
 - `keywords.txt`: discovery 입력
-- `data/state/categories.json`: 카테고리 캐시
+- `data/state/categories.json`: 최하위 카테고리 캐시
 - `data/state/tracked_products.json`: 상세 수집 대상 상품
 
 ## 실행
