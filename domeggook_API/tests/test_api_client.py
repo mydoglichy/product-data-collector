@@ -1,8 +1,8 @@
-import pytest
+﻿import pytest
 from urllib.parse import parse_qs, urlparse
 
-from domeggook_API.api_client import DomeggookApiError, DomeggookClient, ListRequest
-from domeggook_API.rate_limiter import RateLimiter
+from domeggook_API.api.client import DomeggookApiError, DomeggookClient, ListRequest
+from domeggook_API.api.rate_limiter import RateLimiter
 
 
 class FakeResponse:

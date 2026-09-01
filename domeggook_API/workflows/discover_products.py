@@ -1,21 +1,21 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import logging
 import sys
 from pathlib import Path
 
-from .api_client import DomeggookApiError, DomeggookClient, ListRequest, create_domeggook_client
-from .categories import load_or_refresh_categories
-from .config import DomeggookConfig, find_project_root, load_api_keys, load_config
-from .logging_config import configure_logging
-from .parsing import parse_list_header, parse_list_items, parse_product_id
-from .storage import clear_state, load_state, load_tracked_products, merge_discovered_product, save_state, save_tracked_products
-from .time_utils import now_iso
+from ..api.client import DomeggookApiError, DomeggookClient, ListRequest, create_domeggook_client
+from ..services.categories import load_or_refresh_categories
+from ..config import DomeggookConfig, find_project_root, load_api_keys, load_config
+from ..services.logging_config import configure_logging
+from ..services.parsing import parse_list_header, parse_list_items, parse_product_id
+from ..persistence.storage import clear_state, load_state, load_tracked_products, merge_discovered_product, save_state, save_tracked_products
+from ..services.time_utils import now_iso
 from postgres_storage import save_search_ranks_if_enabled
 
 
-LOGGER = logging.getLogger("domeggook_API.discover_products")
+LOGGER = logging.getLogger("domeggook_API.workflows.discover_products")
 RANKED_SORTS = {"ha", "rd"}
 
 
@@ -252,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
 
     project_root = find_project_root(Path.cwd())
     configure_logging(project_root / "domeggook_API" / "data" / "logs")
-    config = load_config(Path(args.config) if args.config else project_root / "domeggook_API" / "config.yaml")
+    config = load_config(Path(args.config) if args.config else project_root / "domeggook_API" / "config" / "config.yaml")
     result = discover(project_root, config, keyword_limit=args.limit, dry_run=args.dry_run)
     print(result)
     return 1 if result["failureCount"] and not result["discoveredCount"] else 0

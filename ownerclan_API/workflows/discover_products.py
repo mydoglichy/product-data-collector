@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import logging
@@ -6,15 +6,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .auth import JwtProvider
-from .client import OwnerclanClient, OwnerclanGraphQLError
-from .config import OwnerclanConfig, find_project_root, load_config, load_credentials, load_keywords
-from .logging_config import configure_logging
-from .normalization import extract_connection_items
-from .queries import all_items_query
-from .rate_limiter import RateLimiter
-from .storage import load_tracked_products, merge_discovered_product, save_tracked_products
-from .time_utils import now_iso
+from ..api.auth import JwtProvider
+from ..api.client import OwnerclanClient, OwnerclanGraphQLError
+from ..config import OwnerclanConfig, find_project_root, load_config, load_credentials, load_keywords
+from ..services.logging_config import configure_logging
+from ..services.normalization import extract_connection_items
+from ..api.queries import all_items_query
+from ..api.rate_limiter import RateLimiter
+from ..persistence.storage import load_tracked_products, merge_discovered_product, save_tracked_products
+from ..services.time_utils import now_iso
 
 
 LOGGER = logging.getLogger("ownerclan_API.discover_products")
@@ -104,7 +104,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     project_root = find_project_root(Path.cwd())
-    config = load_config(Path(args.config) if args.config else project_root / "ownerclan_API" / "config.yaml", project_root)
+    config = load_config(
+        Path(args.config) if args.config else project_root / "ownerclan_API" / "config" / "config.yaml",
+        project_root,
+    )
     configure_logging(config.output.log_dir)
     result = discover(project_root, config, keyword_limit=args.limit, dry_run=args.dry_run)
     print(result)

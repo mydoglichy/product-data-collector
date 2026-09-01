@@ -1,4 +1,4 @@
-from coupang_API.storage import dedupe_records
+﻿from coupang_API.persistence.storage import dedupe_records
 
 
 def test_dedupe_records_keeps_first_occurrence() -> None:

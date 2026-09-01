@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import logging
@@ -7,8 +7,8 @@ from typing import Any
 
 import requests
 
-from .auth import JwtProvider
-from .rate_limiter import RateLimiter
+from ..api.auth import JwtProvider
+from ..api.rate_limiter import RateLimiter
 
 
 API_ENDPOINTS = {

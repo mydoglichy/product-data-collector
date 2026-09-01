@@ -1,7 +1,7 @@
-from domeggook_API.collect_product_details import collect_details
+﻿from domeggook_API.workflows.collect_product_details import collect_details
 from domeggook_API.config import DetailsConfig, DiscoveryConfig, DomeggookConfig, RequestConfig
-from domeggook_API.discover_products import discover
-from domeggook_API.storage import atomic_write_json, load_tracked_products
+from domeggook_API.workflows.discover_products import discover
+from domeggook_API.persistence.storage import atomic_write_json, load_tracked_products
 
 
 class FakeClient:
@@ -73,7 +73,7 @@ def test_discover_saves_only_ranked_sorts_with_global_rank(tmp_path, monkeypatch
         return len(kwargs["records"])
 
     monkeypatch.setattr(
-        "domeggook_API.discover_products.save_search_ranks_if_enabled",
+        "domeggook_API.workflows.discover_products.save_search_ranks_if_enabled",
         fake_save_search_ranks_if_enabled,
     )
 
@@ -117,7 +117,7 @@ def test_discover_uses_response_sort_for_rank_records(tmp_path, monkeypatch):
     (tmp_path / "domeggook_API").mkdir()
     saved_records = []
     monkeypatch.setattr(
-        "domeggook_API.discover_products.save_search_ranks_if_enabled",
+        "domeggook_API.workflows.discover_products.save_search_ranks_if_enabled",
         lambda **kwargs: saved_records.extend(kwargs["records"]) or len(kwargs["records"]),
     )
 
@@ -155,7 +155,7 @@ def test_discover_walks_all_list_pages_until_short_page(tmp_path, monkeypatch):
     (tmp_path / "domeggook_API").mkdir()
     saved_records = []
     monkeypatch.setattr(
-        "domeggook_API.discover_products.save_search_ranks_if_enabled",
+        "domeggook_API.workflows.discover_products.save_search_ranks_if_enabled",
         lambda **kwargs: saved_records.extend(kwargs["records"]) or len(kwargs["records"]),
     )
 
@@ -241,13 +241,13 @@ def test_collect_details_batches_and_writes_snapshot_without_real_api(tmp_path, 
 def test_discover_resumes_from_saved_page_after_failure(tmp_path, monkeypatch):
     monkeypatch.setenv("POSTGRES_ENABLED", "false")
     (tmp_path / "domeggook_API").mkdir()
-    monkeypatch.setattr("domeggook_API.discover_products.save_search_ranks_if_enabled", lambda **kwargs: 0)
+    monkeypatch.setattr("domeggook_API.workflows.discover_products.save_search_ranks_if_enabled", lambda **kwargs: 0)
 
     class FailingSecondPageClient(FakeClient):
         def get_item_list(self, request):
             self.list_requests.append(request)
             if request.page == 2:
-                from domeggook_API.api_client import DomeggookApiError
+                from domeggook_API.api.client import DomeggookApiError
 
                 raise DomeggookApiError("temporary")
             return {
@@ -318,7 +318,7 @@ def test_collect_details_resumes_from_saved_batch_index(tmp_path, monkeypatch):
         def get_item_view(self, product_ids):
             self.detail_requests.append(product_ids)
             if product_ids == ["300"]:
-                from domeggook_API.api_client import DomeggookApiError
+                from domeggook_API.api.client import DomeggookApiError
 
                 raise DomeggookApiError("temporary")
             return {"domeggook": {"item": [{"no": product_id, "title": f"product {product_id}"} for product_id in product_ids]}}

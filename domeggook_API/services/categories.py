@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .api_client import DomeggookClient
-from .storage import atomic_write_json
+from ..api.client import DomeggookClient
+from ..persistence.storage import atomic_write_json
 
 
 CATEGORY_CACHE_MAX_AGE_DAYS = 7

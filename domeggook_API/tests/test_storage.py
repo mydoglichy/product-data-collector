@@ -1,9 +1,9 @@
-import os
+﻿import os
 import time
 
 import pytest
 
-from domeggook_API.storage import (
+from domeggook_API.persistence.storage import (
     FileLock,
     active_product_ids,
     atomic_write_json,

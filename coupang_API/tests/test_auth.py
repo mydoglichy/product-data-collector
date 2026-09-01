@@ -1,8 +1,8 @@
-from datetime import datetime, timezone
+﻿from datetime import datetime, timezone
 from urllib.parse import quote
 
-from coupang_API.auth import generate_authorization
-from coupang_API.client import SearchRequest, build_search_uri
+from coupang_API.api.auth import generate_authorization
+from coupang_API.api.client import SearchRequest, build_search_uri
 
 
 def test_hmac_signature_generation_known_value():
@@ -24,7 +24,7 @@ def test_hmac_signature_generation_known_value():
 
 
 def test_korean_keyword_url_encoding():
-    uri = build_search_uri(SearchRequest(keyword="선글라스 케이스"))
+    uri = build_search_uri(SearchRequest(keyword="?좉??쇱뒪 耳?댁뒪"))
 
-    assert f"keyword={quote('선글라스 케이스')}" in uri
+    assert f"keyword={quote('?좉??쇱뒪 耳?댁뒪')}" in uri
     assert "srpLinkOnly=false" in uri

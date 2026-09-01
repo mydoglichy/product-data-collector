@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import hashlib
@@ -11,23 +11,23 @@ from typing import Any
 
 from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
 
-from .client import OwnerclanGraphQLError
-from .config import OwnerclanConfig, find_project_root, load_config
+from ..api.client import OwnerclanGraphQLError
+from ..config import OwnerclanConfig, find_project_root, load_config
 from .discover_products import make_client
-from .logging_config import configure_logging
-from .normalization import normalize_item
-from .queries import item_query, items_query
-from .storage import (
+from ..services.logging_config import configure_logging
+from ..services.normalization import normalize_item
+from ..api.queries import item_query, items_query
+from ..persistence.storage import (
     active_product_keys,
     clear_state,
     load_tracked_products,
     load_state,
     save_state,
 )
-from .time_utils import now_iso
+from ..services.time_utils import now_iso
 
 
-LOGGER = logging.getLogger("ownerclan_API.collect_product_details")
+LOGGER = logging.getLogger("ownerclan_API.workflows.collect_product_details")
 
 
 def collect_details(
@@ -216,7 +216,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     project_root = find_project_root(Path.cwd())
-    config = load_config(Path(args.config) if args.config else project_root / "ownerclan_API" / "config.yaml", project_root)
+    config = load_config(
+        Path(args.config) if args.config else project_root / "ownerclan_API" / "config" / "config.yaml",
+        project_root,
+    )
     configure_logging(config.output.log_dir)
     result = collect_details(project_root, config, product_limit=args.limit, dry_run=args.dry_run)
     print(result)

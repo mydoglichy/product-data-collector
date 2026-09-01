@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import hashlib
@@ -7,20 +7,20 @@ import logging
 import sys
 from pathlib import Path
 
-from .api_client import DomeggookApiError, DomeggookClient, create_domeggook_client
-from .config import DomeggookConfig, find_project_root, load_api_keys, load_config
-from .logging_config import configure_logging
-from .parsing import parse_detail_products
+from ..api.client import DomeggookApiError, DomeggookClient, create_domeggook_client
+from ..config import DomeggookConfig, find_project_root, load_api_keys, load_config
+from ..services.logging_config import configure_logging
+from ..services.parsing import parse_detail_products
 from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
 
-from .storage import (
+from ..persistence.storage import (
     active_product_ids,
     clear_state,
     load_tracked_products,
     load_state,
     save_state,
 )
-from .time_utils import now_iso
+from ..services.time_utils import now_iso
 
 
 LOGGER = logging.getLogger("domeggook_API.collect_product_details")
@@ -176,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
 
     project_root = find_project_root(Path.cwd())
     configure_logging(project_root / "domeggook_API" / "data" / "logs")
-    config = load_config(Path(args.config) if args.config else project_root / "domeggook_API" / "config.yaml")
+    config = load_config(Path(args.config) if args.config else project_root / "domeggook_API" / "config" / "config.yaml")
     result = collect_details(project_root, config, product_limit=args.limit, dry_run=args.dry_run)
     print(result)
     return 1 if result["failureCount"] and not result["successCount"] else 0

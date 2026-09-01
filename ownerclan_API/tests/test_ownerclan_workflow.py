@@ -1,8 +1,8 @@
 ﻿from pathlib import Path
 
-from ownerclan_API.client import OwnerclanGraphQLError
-from ownerclan_API.collect_by_categories import collect_by_categories
-from ownerclan_API.collect_product_details import collect_details, fetch_items_batch
+from ownerclan_API.api.client import OwnerclanGraphQLError
+from ownerclan_API.workflows.collect_by_categories import collect_by_categories
+from ownerclan_API.workflows.collect_product_details import collect_details, fetch_items_batch
 from ownerclan_API.config import (
     DetailsConfig,
     DiscoveryConfig,
@@ -11,14 +11,14 @@ from ownerclan_API.config import (
     OwnerclanConfig,
     RequestConfig,
 )
-from ownerclan_API.discover_products import discover
-from ownerclan_API.normalization import calculate_total_stock, normalize_item, normalize_options
-from ownerclan_API.storage import (
+from ownerclan_API.workflows.discover_products import discover
+from ownerclan_API.services.normalization import calculate_total_stock, normalize_item, normalize_options
+from ownerclan_API.persistence.storage import (
     atomic_write_json,
     load_json_object,
     load_tracked_products,
 )
-from ownerclan_API.sync_incremental import sync_incremental
+from ownerclan_API.workflows.sync_incremental import sync_incremental
 
 
 class FakeClient:
@@ -95,7 +95,7 @@ def test_category_collection_refreshes_leaf_cache_and_saves_products(tmp_path):
     client = FakeClient()
     saved = {"raw": [], "snapshots": []}
 
-    import ownerclan_API.collect_by_categories as collect_module
+    import ownerclan_API.workflows.collect_by_categories as collect_module
     original_raw = collect_module.save_product_raw_samples_if_enabled
     original_snapshots = collect_module.save_product_snapshots_if_enabled
     collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: saved["raw"].append(kwargs) or 1
@@ -145,7 +145,7 @@ def test_category_collection_resumes_from_saved_cursor(tmp_path):
                 }
             }
 
-    import ownerclan_API.collect_by_categories as collect_module
+    import ownerclan_API.workflows.collect_by_categories as collect_module
     original_raw = collect_module.save_product_raw_samples_if_enabled
     original_snapshots = collect_module.save_product_snapshots_if_enabled
     collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
@@ -216,7 +216,7 @@ def test_collect_details_saves_products_to_postgres_without_json_outputs(tmp_pat
     client = FakeClient()
     saved = {"raw": [], "snapshots": []}
 
-    import ownerclan_API.collect_product_details as collect_module
+    import ownerclan_API.workflows.collect_product_details as collect_module
     original_raw = collect_module.save_product_raw_samples_if_enabled
     original_snapshots = collect_module.save_product_snapshots_if_enabled
     collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: saved["raw"].append(kwargs) or 1
@@ -256,7 +256,7 @@ def test_collect_details_resumes_from_saved_batch_index(tmp_path):
                 return {"items": [_item("W1"), _item("W2")]}
             return {}
 
-    import ownerclan_API.collect_product_details as collect_module
+    import ownerclan_API.workflows.collect_product_details as collect_module
     original_raw = collect_module.save_product_raw_samples_if_enabled
     original_snapshots = collect_module.save_product_snapshots_if_enabled
     collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
@@ -307,7 +307,7 @@ def test_cursor_pagination_and_repeated_cursor_stops(tmp_path):
             }
 
     config = _config(tmp_path)
-    import ownerclan_API.sync_incremental as sync_module
+    import ownerclan_API.workflows.sync_incremental as sync_module
     original_raw = sync_module.save_product_raw_samples_if_enabled
     original_snapshots = sync_module.save_product_snapshots_if_enabled
     sync_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
@@ -351,7 +351,7 @@ def test_incremental_item_limit_stops_after_requested_items(tmp_path):
             }
 
     config = _config(tmp_path)
-    import ownerclan_API.sync_incremental as sync_module
+    import ownerclan_API.workflows.sync_incremental as sync_module
     original_raw = sync_module.save_product_raw_samples_if_enabled
     original_snapshots = sync_module.save_product_snapshots_if_enabled
     sync_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0

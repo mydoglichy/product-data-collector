@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import logging
@@ -10,23 +10,23 @@ from zoneinfo import ZoneInfo
 
 from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
 
-from .client import OwnerclanGraphQLError
-from .config import OwnerclanConfig, find_project_root, load_config
+from ..api.client import OwnerclanGraphQLError
+from ..config import OwnerclanConfig, find_project_root, load_config
 from .discover_products import make_client
-from .logging_config import configure_logging
-from .normalization import extract_connection_items, normalize_item
-from .queries import all_items_query, item_histories_query
-from .storage import (
+from ..services.logging_config import configure_logging
+from ..services.normalization import extract_connection_items, normalize_item
+from ..api.queries import all_items_query, item_histories_query
+from ..persistence.storage import (
     load_state,
     merge_discovered_product,
     save_state,
     save_tracked_products,
     load_tracked_products,
 )
-from .time_utils import now_iso, to_unix_millis
+from ..services.time_utils import now_iso, to_unix_millis
 
 
-LOGGER = logging.getLogger("ownerclan_API.sync_incremental")
+LOGGER = logging.getLogger("ownerclan_API.workflows.sync_incremental")
 
 
 def sync_incremental(
@@ -196,7 +196,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     project_root = find_project_root(Path.cwd())
-    config = load_config(Path(args.config) if args.config else project_root / "ownerclan_API" / "config.yaml", project_root)
+    config = load_config(
+        Path(args.config) if args.config else project_root / "ownerclan_API" / "config" / "config.yaml",
+        project_root,
+    )
     configure_logging(config.output.log_dir)
     result = sync_incremental(project_root, config, page_limit=args.page_limit, item_limit=args.item_limit, dry_run=args.dry_run)
     print(result)

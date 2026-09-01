@@ -1,4 +1,4 @@
-from coupang_API.checkpoint import Checkpoint
+from coupang_API.persistence.checkpoint import Checkpoint
 
 
 def test_checkpoint_persists_completed_keywords(tmp_path):
@@ -20,4 +20,3 @@ def test_checkpoint_clear_removes_file(tmp_path):
     checkpoint.clear()
 
     assert not path.exists()
-

@@ -1,13 +1,13 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import sys
 from pathlib import Path
 
-from .config import find_project_root, load_config
+from ..config import find_project_root, load_config
 from .discover_products import make_client
-from .logging_config import configure_logging
-from .queries import all_items_query
+from ..services.logging_config import configure_logging
+from ..api.queries import all_items_query
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -15,7 +15,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", default=None)
     args = parser.parse_args(argv)
     project_root = find_project_root(Path.cwd())
-    config = load_config(Path(args.config) if args.config else project_root / "ownerclan_API" / "config.yaml", project_root)
+    config = load_config(
+        Path(args.config) if args.config else project_root / "ownerclan_API" / "config" / "config.yaml",
+        project_root,
+    )
     configure_logging(config.output.log_dir)
     client = make_client(project_root, config)
     data = client.graphql(all_items_query(first=1))

@@ -1,11 +1,11 @@
-import base64
+﻿import base64
 import json
 import logging
 import time
 
-from ownerclan_API.auth import JwtProvider, extract_token, extract_token_response, jwt_exp
-from ownerclan_API.client import OwnerclanClient, OwnerclanGraphQLError
-from ownerclan_API.rate_limiter import RateLimiter
+from ownerclan_API.api.auth import JwtProvider, extract_token, extract_token_response, jwt_exp
+from ownerclan_API.api.client import OwnerclanClient, OwnerclanGraphQLError
+from ownerclan_API.api.rate_limiter import RateLimiter
 
 
 class Response:
@@ -114,11 +114,11 @@ def test_graphql_too_many_requests_is_retried():
 
 def test_graphql_utf8_content_is_used_before_response_text_decoding():
     provider = StubProvider(["token"])
-    content = json.dumps({"data": {"name": "상품 상세정보에 별도 표기"}}, ensure_ascii=False).encode("utf-8")
-    session = Session([Response(payload={"data": {"name": "ìí"}}, content=content)])
+    content = json.dumps({"data": {"name": "?곹뭹 ?곸꽭?뺣낫??蹂꾨룄 ?쒓린"}}, ensure_ascii=False).encode("utf-8")
+    session = Session([Response(payload={"data": {"name": "챙혘혖챠혪혞"}}, content=content)])
     client = OwnerclanClient(provider, "production", RateLimiter(0), 10, 0, 60, session=session)
 
-    assert client.graphql("query { item { name } }") == {"name": "상품 상세정보에 별도 표기"}
+    assert client.graphql("query { item { name } }") == {"name": "?곹뭹 ?곸꽭?뺣낫??蹂꾨룄 ?쒓린"}
 
 
 class StubProvider:

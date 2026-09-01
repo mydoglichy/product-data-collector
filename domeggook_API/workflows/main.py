@@ -1,16 +1,16 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import logging
 import sys
 from pathlib import Path
 
-from .api_client import create_domeggook_client
+from ..api.client import create_domeggook_client
 from .collect_product_details import collect_details
-from .config import find_project_root, load_api_keys, load_config
+from ..config import find_project_root, load_api_keys, load_config
 from .discover_products import discover
-from .logging_config import configure_logging
-from .storage import FileLock
+from ..services.logging_config import configure_logging
+from ..persistence.storage import FileLock
 
 
 LOGGER = logging.getLogger("domeggook_API")
@@ -35,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
 
     project_root = find_project_root(Path.cwd())
     configure_logging(project_root / "domeggook_API" / "data" / "logs")
-    config_path = Path(args.config) if args.config else project_root / "domeggook_API" / "config.yaml"
+    config_path = Path(args.config) if args.config else project_root / "domeggook_API" / "config" / "config.yaml"
     result = run(project_root, config_path, limit=args.limit, dry_run=args.dry_run)
     print("Domeggook collection summary")
     print(f"discovery={result['discovery']}")

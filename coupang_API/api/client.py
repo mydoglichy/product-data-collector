@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import time
 from dataclasses import dataclass
@@ -7,8 +7,8 @@ from urllib.parse import quote, urlencode
 
 import requests
 
-from .auth import generate_authorization
-from .rate_limiter import RateLimiter
+from ..api.auth import generate_authorization
+from ..api.rate_limiter import RateLimiter
 
 
 BASE_URL = "https://api-gateway.coupang.com"
