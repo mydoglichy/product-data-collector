@@ -114,6 +114,13 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
     atomic_write_json(path, state)
 
 
+def clear_state(path: Path) -> None:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
 def chunked(values: list[str], size: int) -> list[list[str]]:
     if size < 1:
         raise ValueError("size must be greater than zero")

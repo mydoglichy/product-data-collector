@@ -106,6 +106,25 @@ def save_tracked_products(path: Path, tracked: dict[str, dict[str, Any]]) -> Non
     atomic_write_json(path, tracked)
 
 
+def load_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8-sig") as fp:
+        payload = json.load(fp)
+    return payload if isinstance(payload, dict) else {}
+
+
+def save_state(path: Path, state: dict[str, Any]) -> None:
+    atomic_write_json(path, state)
+
+
+def clear_state(path: Path) -> None:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
 def chunked(values: list[str], size: int) -> list[list[str]]:
     if size < 1:
         raise ValueError("size must be greater than zero")

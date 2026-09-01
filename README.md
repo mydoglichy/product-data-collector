@@ -56,3 +56,12 @@ python -m domeggook_API.main --limit 1 --dry-run
 ```powershell
 pytest
 ```
+
+## 재개 수집 정책
+
+오너클랜과 도매꾹/도매매 수집은 저장 완료 지점 다음부터 재개하도록 상태 파일을 남긴다. 체크포인트는 PostgreSQL 저장과 `tracked_products.json` 저장이 끝난 뒤에만 갱신한다. 따라서 중단 직전 페이지나 배치가 다시 호출될 수 있지만, 같은 `runCollectedAt`으로 재개되어 DB unique/upsert 조건이 중복 row 저장을 막는다.
+
+- 오너클랜: `ownerclan_API/data/state/category-collection-state.json`, `ownerclan_API/data/state/detail-collection-state.json`
+- 도매꾹/도매매: `domeggook_API/data/state/discovery-state.json`, `domeggook_API/data/state/detail-collection-state.json`
+
+정상 완료된 상태 파일은 삭제된다. 상태 파일이 남아 있으면 다음 실행에서 해당 카테고리 cursor, 리스트 페이지, 또는 상세 배치 index부터 재개한다.

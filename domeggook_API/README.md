@@ -49,3 +49,12 @@
 ```powershell
 python -m domeggook_API.main
 ```
+
+## 재개 상태 파일
+
+수집기는 중복 호출을 허용하고 데이터 손실을 줄이는 방식으로 동작한다. 리스트 페이지나 상세 배치 데이터를 PostgreSQL과 `tracked_products.json`에 저장한 뒤에만 다음 시작 위치를 상태 파일에 기록한다. 같은 `runCollectedAt`으로 재개하므로 중복 호출이 발생해도 DB unique/upsert 조건으로 같은 수집 시점의 중복 row는 추가되지 않는다.
+
+- `data/state/discovery-state.json`: 상품번호 리스트 생성 재개 지점. `categoryCode`, `market`, `reason`, `sort`, `nextPage`를 저장한다.
+- `data/state/detail-collection-state.json`: 상세 수집 재개 지점. 정렬된 상품번호 목록의 `trackedListHash`, `nextIndex`, `lastCompletedProductId`를 저장한다.
+
+전체 수집이 정상 완료되면 위 상태 파일은 삭제된다. 실패나 프로세스 중단으로 남아 있으면 다음 실행에서 해당 위치부터 재개한다. 정렬 결과가 실행 중 바뀔 수 있으므로 discovery 재개는 중복 호출을 감수하고 저장 완료 이후의 페이지부터 진행한다.
