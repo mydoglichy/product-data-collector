@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import json
@@ -13,8 +13,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from ownerclan_API.auth import JwtProvider
-from ownerclan_API.client import API_ENDPOINTS
+from ownerclan_API.api.auth import JwtProvider
+from ownerclan_API.api.client import API_ENDPOINTS
 from ownerclan_API.config import find_project_root, load_config, load_credentials
 
 
@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--duration must be greater than zero")
 
     project_root = find_project_root(Path.cwd())
-    config_path = Path(args.config) if args.config else project_root / "ownerclan_API" / "config.yaml"
+    config_path = Path(args.config) if args.config else project_root / "ownerclan_API" / "config" / "config.yaml"
     config = load_config(config_path, project_root)
     username, password = load_credentials(project_root)
 

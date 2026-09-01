@@ -1,7 +1,7 @@
-import os
+﻿import os
 import time
 
-from domeggook_API.categories import load_or_refresh_categories, parse_searchable_categories
+from domeggook_API.services.categories import load_or_refresh_categories, parse_searchable_categories
 
 
 class FakeCategoryClient:

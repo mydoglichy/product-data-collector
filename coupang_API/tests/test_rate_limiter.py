@@ -1,4 +1,4 @@
-from coupang_API.rate_limiter import RateLimiter
+﻿from coupang_API.api.rate_limiter import RateLimiter
 
 
 def test_rate_limiter_keeps_calls_within_period():

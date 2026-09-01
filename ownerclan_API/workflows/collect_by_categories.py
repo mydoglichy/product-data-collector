@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import logging
@@ -8,19 +8,19 @@ from typing import Any
 
 from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
 
-from .categories import load_or_refresh_leaf_categories
-from .client import OwnerclanGraphQLError
-from .config import OwnerclanConfig, find_project_root, load_config
+from ..services.categories import load_or_refresh_leaf_categories
+from ..api.client import OwnerclanGraphQLError
+from ..config import OwnerclanConfig, find_project_root, load_config
 from .discover_products import make_client
-from .logging_config import configure_logging
-from .normalization import extract_connection_items, normalize_item
-from .queries import all_items_query
-from .storage import load_tracked_products, merge_discovered_product, save_tracked_products
-from .storage import clear_state, load_state, save_state
-from .time_utils import now_iso
+from ..services.logging_config import configure_logging
+from ..services.normalization import extract_connection_items, normalize_item
+from ..api.queries import all_items_query
+from ..persistence.storage import load_tracked_products, merge_discovered_product, save_tracked_products
+from ..persistence.storage import clear_state, load_state, save_state
+from ..services.time_utils import now_iso
 
 
-LOGGER = logging.getLogger("ownerclan_API.collect_by_categories")
+LOGGER = logging.getLogger("ownerclan_API.workflows.collect_by_categories")
 
 
 def collect_by_categories(
@@ -221,7 +221,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     project_root = find_project_root(Path.cwd())
-    config = load_config(Path(args.config) if args.config else project_root / "ownerclan_API" / "config.yaml", project_root)
+    config = load_config(
+        Path(args.config) if args.config else project_root / "ownerclan_API" / "config" / "config.yaml",
+        project_root,
+    )
     configure_logging(config.output.log_dir)
     result = collect_by_categories(
         project_root,

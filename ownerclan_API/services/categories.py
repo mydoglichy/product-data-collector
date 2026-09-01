@@ -1,14 +1,14 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 from pathlib import Path
 from typing import Any
 
-from .config import OwnerclanConfig
-from .discover_products import make_client
+from ..config import OwnerclanConfig
+from ..workflows.discover_products import make_client
 from .normalization import extract_connection_items
-from .queries import category_descendants_query
-from .storage import atomic_write_json, load_json_object
+from ..api.queries import category_descendants_query
+from ..persistence.storage import atomic_write_json, load_json_object
 from .time_utils import now_iso
 
 

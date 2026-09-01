@@ -1,4 +1,4 @@
-from domeggook_API.parsing import parse_detail_products, parse_list_items, parse_product_id
+from domeggook_API.services.parsing import parse_detail_products, parse_list_items, parse_product_id
 
 
 def test_parse_list_items_and_product_id_from_document_style_payload():

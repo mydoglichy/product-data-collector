@@ -1,13 +1,13 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import sys
 from pathlib import Path
 
 from .collect_by_categories import collect_by_categories
-from .config import find_project_root, load_config
-from .logging_config import configure_logging
-from .storage import FileLock
+from ..config import find_project_root, load_config
+from ..services.logging_config import configure_logging
+from ..persistence.storage import FileLock
 from .sync_incremental import sync_incremental
 
 
@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     project_root = find_project_root(Path.cwd())
-    config_path = Path(args.config) if args.config else project_root / "ownerclan_API" / "config.yaml"
+    config_path = Path(args.config) if args.config else project_root / "ownerclan_API" / "config" / "config.yaml"
     config = load_config(config_path, project_root)
     configure_logging(config.output.log_dir)
     result = run(project_root, config_path, limit=args.limit, refresh_categories=args.refresh_categories, dry_run=args.dry_run)

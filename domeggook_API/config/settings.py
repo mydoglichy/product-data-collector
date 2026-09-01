@@ -181,5 +181,5 @@ def find_project_root(start: Path) -> Path:
             or (candidate / "requirements.txt").exists()
         ):
             return candidate
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 

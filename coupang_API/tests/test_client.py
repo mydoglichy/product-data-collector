@@ -1,7 +1,7 @@
-import pytest
+﻿import pytest
 
-from coupang_API.client import CoupangPartnersClient, CoupangResponseError, SearchRequest, build_search_uri
-from coupang_API.models import parse_product_records
+from coupang_API.api.client import CoupangPartnersClient, CoupangResponseError, SearchRequest, build_search_uri
+from coupang_API.services.models import parse_product_records
 
 
 def test_normal_response_parsing():

@@ -1,4 +1,4 @@
-from domeggook_API.rate_limiter import RateLimiter, RateLimitWindow
+﻿from domeggook_API.api.rate_limiter import RateLimiter, RateLimitWindow
 
 
 def test_rate_limiter_respects_the_most_constrained_window():

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 import time
@@ -11,12 +11,12 @@ from urllib.parse import urlencode
 
 import requests
 
-from .config import DomeggookConfig
-from .rate_limiter import RateLimitWindow, RateLimiter
+from ..config import DomeggookConfig
+from ..api.rate_limiter import RateLimitWindow, RateLimiter
 
 
 BASE_URL = "https://www.domeggook.com/ssl/api/"
-LOGGER = logging.getLogger("domeggook_API.api_client")
+LOGGER = logging.getLogger("domeggook_API.api.client")
 
 
 class DomeggookApiError(Exception):

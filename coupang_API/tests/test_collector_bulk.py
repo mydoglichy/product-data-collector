@@ -1,6 +1,6 @@
 import json
 
-from coupang_API import collector
+from coupang_API.workflows import collector
 
 
 class FakeClient:
@@ -37,7 +37,8 @@ def test_bulk_collector_resumes_from_checkpoint_and_saves_to_postgres(tmp_path, 
     project_root = tmp_path
     api_dir = project_root / "coupang_API"
     api_dir.mkdir()
-    (api_dir / "keywords.txt").write_text(
+    (api_dir / "config").mkdir()
+    (api_dir / "config" / "keywords.txt").write_text(
         "completed\n"
         "new-keyword\n"
         "new-keyword\n",

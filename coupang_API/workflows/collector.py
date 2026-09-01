@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import logging
@@ -6,12 +6,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .checkpoint import Checkpoint
-from .client import CoupangApiError, CoupangPartnersClient, SearchRequest
-from .config import CollectorConfig, load_config, load_credentials, load_keywords
-from .models import parse_product_records
-from .rate_limiter import RateLimiter
-from .storage import dedupe_records
+from ..persistence.checkpoint import Checkpoint
+from ..api.client import CoupangApiError, CoupangPartnersClient, SearchRequest
+from ..config import CollectorConfig, load_config, load_credentials, load_keywords
+from ..services.models import parse_product_records
+from ..api.rate_limiter import RateLimiter
+from ..persistence.storage import dedupe_records
 from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
 
 
@@ -25,7 +25,7 @@ def collect_once(project_root: Path, config: CollectorConfig) -> int:
         secret_key=secret_key,
         rate_limiter=RateLimiter(max_calls=config.requests_per_minute, period_seconds=60.0),
     )
-    keywords = load_keywords(project_root / "coupang_API" / "keywords.txt")
+    keywords = load_keywords(project_root / "coupang_API" / "config" / "keywords.txt")
     started_at = datetime.now(timezone.utc)
     checkpoint = Checkpoint.load(project_root / "coupang_API" / "data" / "state" / "product_search_checkpoint.json")
     success_keywords: list[str] = []
@@ -150,7 +150,7 @@ def _without_raw(product: dict[str, object]) -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Collect Coupang Partners keyword product search data.")
-    parser.add_argument("--config", default=None, help="Path to config.yaml. Defaults to coupang_API/config.yaml.")
+    parser.add_argument("--config", default=None, help="Path to config.yaml. Defaults to coupang_API/config/config.yaml.")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -158,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     project_root = find_project_root(Path.cwd())
-    config_path = Path(args.config) if args.config else project_root / "coupang_API" / "config.yaml"
+    config_path = Path(args.config) if args.config else project_root / "coupang_API" / "config" / "config.yaml"
     config = load_config(config_path)
     return collect_once(project_root, config)
 
@@ -176,7 +176,7 @@ def find_project_root(start: Path) -> Path:
     for candidate in candidates:
         if (candidate / "coupang_API").is_dir():
             return candidate
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
 if __name__ == "__main__":

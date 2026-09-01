@@ -70,7 +70,7 @@ def find_project_root(start: Path) -> Path:
             or (candidate / "requirements.txt").exists()
         ):
             return candidate
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
 def load_config(path: Path, project_root: Path | None = None) -> OwnerclanConfig:
@@ -93,7 +93,7 @@ def load_config(path: Path, project_root: Path | None = None) -> OwnerclanConfig
     output = _mapping(payload, "output")
     timezone = str(payload.get("timezone") or "Asia/Seoul")
 
-    keyword_file = _resolve(root, discovery.get("keyword_file") or "ownerclan_API/keywords.txt")
+    keyword_file = _resolve(root, discovery.get("keyword_file") or "ownerclan_API/config/keywords.txt")
     top_limit = _positive_int(discovery.get("top_limit_per_keyword", 10), "discovery.top_limit_per_keyword")
     new_limit = _positive_int(discovery.get("new_limit_per_keyword", 10), "discovery.new_limit_per_keyword")
     if top_limit > MAX_ALL_ITEMS_FIRST or new_limit > MAX_ALL_ITEMS_FIRST:

@@ -25,21 +25,21 @@
 - `data/state/tracked_products.json`: 상세 수집 대상 상품
 - `data/state/incremental-state.json`: 증분 수집 기준 시각
 
-`keywords.txt` 기반 discovery 모듈은 남아 있지만 기본 실행 경로가 아니다.
+`config/keywords.txt` 기반 discovery 모듈은 남아 있지만 기본 실행 경로가 아니다.
 
 ## 실행
 
 ```powershell
-python -m ownerclan_API.main
-python -m ownerclan_API.main --refresh-categories
-python -m ownerclan_API.collect_by_categories --refresh-categories
-python -m ownerclan_API.sync_incremental
+python -m ownerclan_API
+python -m ownerclan_API --refresh-categories
+python -m ownerclan_API.workflows.collect_by_categories --refresh-categories
+python -m ownerclan_API.workflows.sync_incremental
 ```
 
 소량 검증:
 
 ```powershell
-python -m ownerclan_API.main --refresh-categories --limit 1 --dry-run
+python -m ownerclan_API --refresh-categories --limit 1 --dry-run
 ```
 
 ## 재개 상태 파일
