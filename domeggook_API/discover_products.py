@@ -46,67 +46,79 @@ def discover(
     for category in categories:
         for market in config.discovery.markets:
             for reason, sort_code in config.discovery.sorts.items():
-                collected_at = now_iso(config.timezone)
-                try:
-                    payload = client.get_item_list(
-                        ListRequest(
-                            market=market,
-                            sort=sort_code,
-                            size=config.discovery.items_per_keyword,
-                            category_code=category.code,
+                page = 1
+                while True:
+                    collected_at = now_iso(config.timezone)
+                    try:
+                        payload = client.get_item_list(
+                            ListRequest(
+                                market=market,
+                                sort=sort_code,
+                                size=config.discovery.items_per_keyword,
+                                page=page,
+                                category_code=category.code,
+                            )
                         )
-                    )
-                    items = parse_list_items(payload)
-                    header = parse_list_header(payload)
-                except DomeggookApiError as exc:
-                    failures += 1
-                    LOGGER.error(
-                        "failed list category=%s category_name=%r market=%s sort=%s error=%s",
-                        category.code,
-                        category.name,
-                        market,
-                        sort_code,
-                        exc,
-                    )
-                    continue
-
-                effective_sort = _text_or_none(header.get("sort")) or sort_code
-                current_page = _positive_int(header.get("currentPage")) or 1
-                items_per_page = _positive_int(header.get("itemsPerPage")) or config.discovery.items_per_keyword
-                should_save_rank = effective_sort in RANKED_SORTS
-
-                for index, item in enumerate(items, start=1):
-                    rank = _global_rank(current_page, items_per_page, index)
-                    product_id = parse_product_id(item)
-                    if not product_id:
-                        LOGGER.warning(
-                            "list item missing product id category=%s category_name=%r market=%s sort=%s rank=%d",
+                        items = parse_list_items(payload)
+                        header = parse_list_header(payload)
+                    except DomeggookApiError as exc:
+                        failures += 1
+                        LOGGER.error(
+                            "failed list category=%s category_name=%r market=%s sort=%s page=%d error=%s",
                             category.code,
                             category.name,
                             market,
                             sort_code,
-                            rank,
+                            page,
+                            exc,
                         )
-                        continue
-                    discovered += 1
-                    if merge_discovered_product(tracked, product_id, category.name, market, reason, collected_at):
-                        new_products += 1
-                    if should_save_rank:
-                        search_rank_records.append(
-                            {
-                                "collectedAt": collected_at,
-                                "keyword": category.name,
-                                "categoryCode": category.code,
-                                "categoryName": category.name,
-                                "categoryPath": list(category.path),
-                                "market": market,
-                                "sort": effective_sort,
-                                "requestedSort": sort_code,
-                                "reason": reason,
-                                "productId": product_id,
-                                "rank": rank,
-                            }
-                        )
+                        break
+
+                    if not items:
+                        break
+
+                    effective_sort = _text_or_none(header.get("sort")) or sort_code
+                    current_page = _positive_int(header.get("currentPage")) or page
+                    items_per_page = _positive_int(header.get("itemsPerPage")) or config.discovery.items_per_keyword
+                    should_save_rank = effective_sort in RANKED_SORTS
+
+                    for index, item in enumerate(items, start=1):
+                        rank = _global_rank(current_page, items_per_page, index)
+                        product_id = parse_product_id(item)
+                        if not product_id:
+                            LOGGER.warning(
+                                "list item missing product id category=%s category_name=%r market=%s sort=%s page=%d rank=%d",
+                                category.code,
+                                category.name,
+                                market,
+                                sort_code,
+                                page,
+                                rank,
+                            )
+                            continue
+                        discovered += 1
+                        if merge_discovered_product(tracked, product_id, category.name, market, reason, collected_at):
+                            new_products += 1
+                        if should_save_rank:
+                            search_rank_records.append(
+                                {
+                                    "collectedAt": collected_at,
+                                    "keyword": category.name,
+                                    "categoryCode": category.code,
+                                    "categoryName": category.name,
+                                    "categoryPath": list(category.path),
+                                    "market": market,
+                                    "sort": effective_sort,
+                                    "requestedSort": sort_code,
+                                    "reason": reason,
+                                    "productId": product_id,
+                                    "rank": rank,
+                                }
+                            )
+
+                    if len(items) < items_per_page:
+                        break
+                    page += 1
 
     if not dry_run:
         save_tracked_products(tracked_path, tracked)

@@ -16,13 +16,27 @@ class FakeCategoryClient:
 def test_parse_searchable_categories_walks_child_tree_and_skips_large_categories():
     categories = parse_searchable_categories(_payload("leaf"))
 
-    assert [category.code for category in categories] == ["01_01_00_00_00", "01_01_01_00_00"]
-    assert categories[0].name == "middle"
-    assert categories[0].path == ("large", "middle")
-    assert categories[1].depth == 3
+    assert [category.code for category in categories] == ["01_01_01_00_00"]
+    assert categories[0].name == "leaf"
+    assert categories[0].path == ("large", "middle", "leaf")
+    assert categories[0].depth == 3
 
 
 def test_load_or_refresh_categories_uses_fresh_cache(tmp_path):
+    path = tmp_path / "categories.json"
+    path.write_text(
+        '{"version":2,"categories":[{"code":"02_01_00_00_00","name":"cached","depth":2,"path":["large","cached"]}]}',
+        encoding="utf-8",
+    )
+    client = FakeCategoryClient()
+
+    categories = load_or_refresh_categories(path, client)
+
+    assert client.calls == 0
+    assert [category.name for category in categories] == ["cached"]
+
+
+def test_load_or_refresh_categories_refreshes_legacy_cache(tmp_path):
     path = tmp_path / "categories.json"
     path.write_text(
         '{"categories":[{"code":"02_01_00_00_00","name":"cached","depth":2,"path":["large","cached"]}]}',
@@ -32,8 +46,8 @@ def test_load_or_refresh_categories_uses_fresh_cache(tmp_path):
 
     categories = load_or_refresh_categories(path, client)
 
-    assert client.calls == 0
-    assert [category.name for category in categories] == ["cached"]
+    assert client.calls == 1
+    assert [category.name for category in categories] == ["fresh"]
 
 
 def test_load_or_refresh_categories_refreshes_stale_cache(tmp_path):
