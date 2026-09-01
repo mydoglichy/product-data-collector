@@ -42,3 +42,11 @@
 ## 재고
 
 현재 상세 API는 재고를 `qty.inventory` 단일값으로 제공한다. 가격/배송비처럼 `dome`과 `supply` 재고가 따로 내려오지 않으므로 DB도 상품 단위 단일 재고 row를 저장한다.
+
+## 재개 상태 파일
+
+`data/state/discovery-state.json`과 `data/state/detail-collection-state.json`은 상품 데이터 저장소가 아니라 재개용 체크포인트다. 수집기는 PostgreSQL 저장과 `tracked_products.json` 저장이 성공한 뒤에만 다음 페이지 또는 다음 배치 위치를 기록한다.
+
+- discovery 상태는 `categoryCode`, `market`, `reason`, `sort`, `nextPage`, `runCollectedAt`을 저장한다.
+- 상세 수집 상태는 `trackedListHash`, `nextIndex`, `lastCompletedProductId`, `runCollectedAt`을 저장한다.
+- 정상 완료되면 상태 파일은 삭제된다.

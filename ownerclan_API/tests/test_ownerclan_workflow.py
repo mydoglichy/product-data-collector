@@ -121,6 +121,75 @@ def test_category_collection_refreshes_leaf_cache_and_saves_products(tmp_path):
     assert len(saved["snapshots"]) == 1
 
 
+def test_category_collection_resumes_from_saved_cursor(tmp_path):
+    config = _config(tmp_path)
+    atomic_write_json(
+        config.output.category_cache_path,
+        {
+            "categories": [_category("C1", children=[])],
+        },
+    )
+
+    class FailingSecondPageClient:
+        def __init__(self):
+            self.queries = []
+
+        def graphql(self, query):
+            self.queries.append(query)
+            if 'after: "cursor-1"' in query:
+                raise RuntimeError("temporary")
+            return {
+                "allItems": {
+                    "pageInfo": {"hasNextPage": True, "endCursor": "cursor-1"},
+                    "edges": [{"cursor": "cursor-1", "node": _item("W1")}],
+                }
+            }
+
+    import ownerclan_API.collect_by_categories as collect_module
+    original_raw = collect_module.save_product_raw_samples_if_enabled
+    original_snapshots = collect_module.save_product_snapshots_if_enabled
+    collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
+    collect_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+
+    try:
+        first_client = FailingSecondPageClient()
+        first_result = collect_by_categories(tmp_path, config, client=first_client)
+    finally:
+        collect_module.save_product_raw_samples_if_enabled = original_raw
+        collect_module.save_product_snapshots_if_enabled = original_snapshots
+
+    assert first_result["failureCount"] == 1
+    state = load_json_object(config.output.state_dir / "category-collection-state.json")
+    assert state["categoryKey"] == "C1"
+    assert state["after"] == "cursor-1"
+
+    class ResumingClient:
+        def __init__(self):
+            self.queries = []
+
+        def graphql(self, query):
+            self.queries.append(query)
+            assert 'after: "cursor-1"' in query
+            return {
+                "allItems": {
+                    "pageInfo": {"hasNextPage": False, "endCursor": "cursor-2"},
+                    "edges": [{"cursor": "cursor-2", "node": _item("W2")}],
+                }
+            }
+
+    collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
+    collect_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+    try:
+        second_client = ResumingClient()
+        second_result = collect_by_categories(tmp_path, config, client=second_client)
+    finally:
+        collect_module.save_product_raw_samples_if_enabled = original_raw
+        collect_module.save_product_snapshots_if_enabled = original_snapshots
+
+    assert second_result["failureCount"] == 0
+    assert len(second_client.queries) == 1
+
+
 def test_multiple_item_query_falls_back_to_items_by_keys_then_single_item():
     class FallbackClient:
         def __init__(self):
@@ -169,6 +238,58 @@ def test_collect_details_saves_products_to_postgres_without_json_outputs(tmp_pat
     assert not list(config.output.output_dir.glob("ownerclan_*_product-snapshots.json"))
     assert not list((config.output.output_dir.parent / "raw").glob("ownerclan_*_raw.json"))
     assert not list((config.output.output_dir.parent / "history").glob("ownerclan_*_product-history.json"))
+
+
+def test_collect_details_resumes_from_saved_batch_index(tmp_path):
+    config = _config(tmp_path)
+    atomic_write_json(
+        config.output.tracked_products_path,
+        {value: {"productId": value, "active": True} for value in ("W1", "W2", "W3")},
+    )
+
+    class FailingSecondBatchClient(FakeClient):
+        def graphql(self, query):
+            self.queries.append(query)
+            if '"W3"' in query:
+                raise RuntimeError("temporary")
+            if "items(" in query:
+                return {"items": [_item("W1"), _item("W2")]}
+            return {}
+
+    import ownerclan_API.collect_product_details as collect_module
+    original_raw = collect_module.save_product_raw_samples_if_enabled
+    original_snapshots = collect_module.save_product_snapshots_if_enabled
+    collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
+    collect_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+
+    try:
+        first_client = FailingSecondBatchClient()
+        first_result = collect_details(tmp_path, config, client=first_client)
+    finally:
+        collect_module.save_product_raw_samples_if_enabled = original_raw
+        collect_module.save_product_snapshots_if_enabled = original_snapshots
+
+    assert first_result["failureCount"] == 1
+
+    class ResumingClient(FakeClient):
+        def graphql(self, query):
+            self.queries.append(query)
+            assert '"W3"' in query
+            if "items(" in query:
+                return {"items": [_item("W3")]}
+            return {}
+
+    collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
+    collect_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+    try:
+        second_client = ResumingClient()
+        second_result = collect_details(tmp_path, config, client=second_client)
+    finally:
+        collect_module.save_product_raw_samples_if_enabled = original_raw
+        collect_module.save_product_snapshots_if_enabled = original_snapshots
+
+    assert second_result["failureCount"] == 0
+    assert len(second_client.queries) == 1
 
 
 def test_cursor_pagination_and_repeated_cursor_stops(tmp_path):

@@ -10,7 +10,7 @@ from .categories import load_or_refresh_categories
 from .config import DomeggookConfig, find_project_root, load_api_keys, load_config
 from .logging_config import configure_logging
 from .parsing import parse_list_header, parse_list_items, parse_product_id
-from .storage import load_tracked_products, merge_discovered_product, save_tracked_products
+from .storage import clear_state, load_state, load_tracked_products, merge_discovered_product, save_state, save_tracked_products
 from .time_utils import now_iso
 from postgres_storage import save_search_ranks_if_enabled
 
@@ -37,97 +37,112 @@ def discover(
         categories = categories[:keyword_limit]
 
     tracked_path = data_dir / "state" / "tracked_products.json"
+    state_path = data_dir / "state" / "discovery-state.json"
+    state = load_state(state_path)
+    run_collected_at = str(state.get("runCollectedAt") or now_iso(config.timezone))
     tracked = load_tracked_products(tracked_path)
-    search_rank_records: list[dict[str, object]] = []
     discovered = 0
     new_products = 0
     failures = 0
+    stopped_on_failure = False
 
-    for category in categories:
-        for market in config.discovery.markets:
-            for reason, sort_code in config.discovery.sorts.items():
-                page = 1
-                while True:
-                    collected_at = now_iso(config.timezone)
-                    try:
-                        payload = client.get_item_list(
-                            ListRequest(
-                                market=market,
-                                sort=sort_code,
-                                size=config.discovery.items_per_keyword,
-                                page=page,
-                                category_code=category.code,
-                            )
-                        )
-                        items = parse_list_items(payload)
-                        header = parse_list_header(payload)
-                    except DomeggookApiError as exc:
-                        failures += 1
-                        LOGGER.error(
-                            "failed list category=%s category_name=%r market=%s sort=%s page=%d error=%s",
-                            category.code,
-                            category.name,
-                            market,
-                            sort_code,
-                            page,
-                            exc,
-                        )
-                        break
+    positions = _discovery_positions(categories, config)
+    start_index = _discovery_start_index(positions, state)
+    for position_index, (category, market, reason, sort_code) in enumerate(positions[start_index:], start=start_index):
+        page = _state_page(state) if position_index == start_index else 1
+        while True:
+            collected_at = run_collected_at
+            try:
+                payload = client.get_item_list(
+                    ListRequest(
+                        market=market,
+                        sort=sort_code,
+                        size=config.discovery.items_per_keyword,
+                        page=page,
+                        category_code=category.code,
+                    )
+                )
+                items = parse_list_items(payload)
+                header = parse_list_header(payload)
+            except DomeggookApiError as exc:
+                failures += 1
+                stopped_on_failure = True
+                LOGGER.error(
+                    "failed list category=%s category_name=%r market=%s sort=%s page=%d error=%s",
+                    category.code,
+                    category.name,
+                    market,
+                    sort_code,
+                    page,
+                    exc,
+                )
+                break
 
-                    if not items:
-                        break
+            if not items:
+                if not dry_run:
+                    _save_next_discovery_state(state_path, collected_at, positions, position_index, None)
+                break
 
-                    effective_sort = _text_or_none(header.get("sort")) or sort_code
-                    current_page = _positive_int(header.get("currentPage")) or page
-                    items_per_page = _positive_int(header.get("itemsPerPage")) or config.discovery.items_per_keyword
-                    should_save_rank = effective_sort in RANKED_SORTS
+            effective_sort = _text_or_none(header.get("sort")) or sort_code
+            current_page = _positive_int(header.get("currentPage")) or page
+            items_per_page = _positive_int(header.get("itemsPerPage")) or config.discovery.items_per_keyword
+            should_save_rank = effective_sort in RANKED_SORTS
+            search_rank_records: list[dict[str, object]] = []
 
-                    for index, item in enumerate(items, start=1):
-                        rank = _global_rank(current_page, items_per_page, index)
-                        product_id = parse_product_id(item)
-                        if not product_id:
-                            LOGGER.warning(
-                                "list item missing product id category=%s category_name=%r market=%s sort=%s page=%d rank=%d",
-                                category.code,
-                                category.name,
-                                market,
-                                sort_code,
-                                page,
-                                rank,
-                            )
-                            continue
-                        discovered += 1
-                        if merge_discovered_product(tracked, product_id, category.name, market, reason, collected_at):
-                            new_products += 1
-                        if should_save_rank:
-                            search_rank_records.append(
-                                {
-                                    "collectedAt": collected_at,
-                                    "keyword": category.name,
-                                    "categoryCode": category.code,
-                                    "categoryName": category.name,
-                                    "categoryPath": list(category.path),
-                                    "market": market,
-                                    "sort": effective_sort,
-                                    "requestedSort": sort_code,
-                                    "reason": reason,
-                                    "productId": product_id,
-                                    "rank": rank,
-                                }
-                            )
+            for index, item in enumerate(items, start=1):
+                rank = _global_rank(current_page, items_per_page, index)
+                product_id = parse_product_id(item)
+                if not product_id:
+                    LOGGER.warning(
+                        "list item missing product id category=%s category_name=%r market=%s sort=%s page=%d rank=%d",
+                        category.code,
+                        category.name,
+                        market,
+                        sort_code,
+                        page,
+                        rank,
+                    )
+                    continue
+                discovered += 1
+                if merge_discovered_product(tracked, product_id, category.name, market, reason, collected_at):
+                    new_products += 1
+                if should_save_rank:
+                    search_rank_records.append(
+                        {
+                            "collectedAt": collected_at,
+                            "keyword": category.name,
+                            "categoryCode": category.code,
+                            "categoryName": category.name,
+                            "categoryPath": list(category.path),
+                            "market": market,
+                            "sort": effective_sort,
+                            "requestedSort": sort_code,
+                            "reason": reason,
+                            "productId": product_id,
+                            "rank": rank,
+                        }
+                    )
 
-                    if len(items) < items_per_page:
-                        break
-                    page += 1
+            if not dry_run:
+                save_tracked_products(tracked_path, tracked)
+                save_search_ranks_if_enabled(
+                    project_root=project_root,
+                    platform="domeggook",
+                    records=search_rank_records,
+                    logger=LOGGER,
+                )
 
-    if not dry_run:
-        save_tracked_products(tracked_path, tracked)
-        save_search_ranks_if_enabled(
-            project_root=project_root,
-            platform="domeggook",
-            records=search_rank_records,
-            logger=LOGGER,
-        )
+            if len(items) < items_per_page:
+                if not dry_run:
+                    _save_next_discovery_state(state_path, collected_at, positions, position_index, None)
+                break
+            page += 1
+            if not dry_run:
+                _save_next_discovery_state(state_path, collected_at, positions, position_index, page)
+        if stopped_on_failure:
+            break
+    if not dry_run and not stopped_on_failure:
+        clear_state(state_path)
 
     return {
         "categoryCount": len(categories),
@@ -140,6 +155,78 @@ def discover(
 
 def _global_rank(current_page: int, items_per_page: int, index: int) -> int:
     return (current_page - 1) * items_per_page + index
+
+
+def _discovery_positions(categories: list[object], config: DomeggookConfig) -> list[tuple[object, str, str, str]]:
+    return [
+        (category, market, reason, sort_code)
+        for category in categories
+        for market in config.discovery.markets
+        for reason, sort_code in config.discovery.sorts.items()
+    ]
+
+
+def _discovery_start_index(positions: list[tuple[object, str, str, str]], state: dict[str, object]) -> int:
+    category_code = state.get("categoryCode")
+    market = state.get("market")
+    sort = state.get("sort")
+    reason = state.get("reason")
+    if not category_code or not market or not sort:
+        return 0
+    for index, (category, candidate_market, candidate_reason, candidate_sort) in enumerate(positions):
+        if (
+            getattr(category, "code", None) == category_code
+            and candidate_market == market
+            and candidate_sort == sort
+            and (not reason or candidate_reason == reason)
+        ):
+            return index
+    return 0
+
+
+def _state_page(state: dict[str, object]) -> int:
+    try:
+        return max(int(state.get("nextPage", 1)), 1)
+    except (TypeError, ValueError):
+        return 1
+
+
+def _save_next_discovery_state(
+    state_path: Path,
+    collected_at: str,
+    positions: list[tuple[object, str, str, str]],
+    index: int,
+    next_page: int | None,
+) -> None:
+    if next_page is not None:
+        category, market, reason, sort_code = positions[index]
+        save_state(
+            state_path,
+            {
+                "runCollectedAt": collected_at,
+                "categoryCode": getattr(category, "code", None),
+                "market": market,
+                "reason": reason,
+                "sort": sort_code,
+                "nextPage": next_page,
+            },
+        )
+        return
+    if index + 1 >= len(positions):
+        clear_state(state_path)
+        return
+    category, market, reason, sort_code = positions[index + 1]
+    save_state(
+        state_path,
+        {
+            "runCollectedAt": collected_at,
+            "categoryCode": getattr(category, "code", None),
+            "market": market,
+            "reason": reason,
+            "sort": sort_code,
+            "nextPage": 1,
+        },
+    )
 
 
 def _positive_int(value: object) -> int | None:

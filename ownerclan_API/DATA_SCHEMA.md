@@ -33,3 +33,12 @@
 ## 재고
 
 옵션별 `quantity`가 있으면 `inventory.stockQuantity`는 `sum(options[].quantity)`로 저장한다. API 원본 수량은 `inventory.apiStockQuantity`에 보존한다.
+
+## 재개 상태 파일
+
+`data/state/category-collection-state.json`과 `data/state/detail-collection-state.json`은 상품 데이터 저장소가 아니라 재개용 체크포인트다. 수집기는 PostgreSQL 저장과 `tracked_products.json` 저장이 성공한 뒤에만 다음 cursor 또는 다음 배치 위치를 기록한다.
+
+- 카테고리 수집 상태는 `categoryKey`, `after`, `runCollectedAt`을 저장한다.
+- 상세 수집 상태는 `trackedListHash`, `nextIndex`, `lastCompletedProductId`, `runCollectedAt`을 저장한다.
+- 증분 수집 상태는 기존처럼 `incremental-state.json`의 `lastSuccessfulItemSyncAt`을 완전 성공 후에만 갱신한다.
+- 정상 완료되면 카테고리/상세 재개 상태 파일은 삭제된다.

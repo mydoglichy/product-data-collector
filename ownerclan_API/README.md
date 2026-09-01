@@ -41,3 +41,13 @@ python -m ownerclan_API.sync_incremental
 ```powershell
 python -m ownerclan_API.main --refresh-categories --limit 1 --dry-run
 ```
+
+## 재개 상태 파일
+
+수집기는 중복 호출을 허용하고 데이터 손실을 줄이는 방식으로 동작한다. 페이지나 배치 데이터를 PostgreSQL과 `tracked_products.json`에 저장한 뒤에만 다음 시작 위치를 상태 파일에 기록한다. 같은 `runCollectedAt`으로 재개하므로 중복 호출이 발생해도 DB unique/upsert 조건으로 같은 수집 시점의 중복 row는 추가되지 않는다.
+
+- `data/state/category-collection-state.json`: 카테고리 전체 순회 재개 지점. `categoryKey`와 GraphQL `after` cursor를 저장한다.
+- `data/state/detail-collection-state.json`: 상세 수집 재개 지점. 정렬된 상품번호 목록의 `trackedListHash`, `nextIndex`, `lastCompletedProductId`를 저장한다.
+- `data/state/incremental-state.json`: 증분 수집의 마지막 완전 성공 시각을 저장한다.
+
+전체 수집이 정상 완료되면 `category-collection-state.json`과 `detail-collection-state.json`은 삭제된다. 실패나 프로세스 중단으로 남아 있으면 다음 실행에서 해당 위치부터 재개한다.

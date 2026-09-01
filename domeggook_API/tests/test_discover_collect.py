@@ -238,6 +238,104 @@ def test_collect_details_batches_and_writes_snapshot_without_real_api(tmp_path, 
     assert result["failureCount"] == 0
 
 
+def test_discover_resumes_from_saved_page_after_failure(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTGRES_ENABLED", "false")
+    (tmp_path / "domeggook_API").mkdir()
+    monkeypatch.setattr("domeggook_API.discover_products.save_search_ranks_if_enabled", lambda **kwargs: 0)
+
+    class FailingSecondPageClient(FakeClient):
+        def get_item_list(self, request):
+            self.list_requests.append(request)
+            if request.page == 2:
+                from domeggook_API.api_client import DomeggookApiError
+
+                raise DomeggookApiError("temporary")
+            return {
+                "domeggook": {
+                    "header": {"currentPage": request.page, "itemsPerPage": 2, "sort": request.sort},
+                    "list": {"item": [{"no": "100"}, {"no": "200"}]},
+                }
+            }
+
+    config = DomeggookConfig(
+        discovery=DiscoveryConfig(markets=("dome",), sorts={"ranking": "rd"}, items_per_keyword=2),
+        details=DetailsConfig(batch_size=100, raw_sample_limit=20),
+        request=RequestConfig(
+            max_requests_per_minute=120,
+            max_requests_per_hour=9000,
+            max_requests_per_day=14000,
+            timeout_seconds=20,
+            max_retries=3,
+        ),
+        timezone="Asia/Seoul",
+    )
+    first_client = FailingSecondPageClient()
+
+    first_result = discover(tmp_path, config, client=first_client)
+
+    assert first_result["failureCount"] == 1
+    assert [request.page for request in first_client.list_requests] == [1, 2]
+
+    class ResumingClient(FakeClient):
+        def get_item_list(self, request):
+            self.list_requests.append(request)
+            return {
+                "domeggook": {
+                    "header": {"currentPage": request.page, "itemsPerPage": 2, "sort": request.sort},
+                    "list": {"item": [{"no": "300"}]},
+                }
+            }
+
+    second_client = ResumingClient()
+    second_result = discover(tmp_path, config, client=second_client)
+
+    assert second_result["failureCount"] == 0
+    assert [request.page for request in second_client.list_requests] == [2]
+
+
+def test_collect_details_resumes_from_saved_batch_index(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTGRES_ENABLED", "false")
+    api_dir = tmp_path / "domeggook_API"
+    api_dir.mkdir()
+    atomic_write_json(
+        api_dir / "data" / "state" / "tracked_products.json",
+        {value: {"productId": value, "active": True} for value in ("100", "200", "300")},
+    )
+    config = DomeggookConfig(
+        discovery=DiscoveryConfig(markets=("dome",), sorts={"ranking": "rd"}, items_per_keyword=2),
+        details=DetailsConfig(batch_size=2, raw_sample_limit=20),
+        request=RequestConfig(
+            max_requests_per_minute=120,
+            max_requests_per_hour=9000,
+            max_requests_per_day=14000,
+            timeout_seconds=20,
+            max_retries=3,
+        ),
+        timezone="Asia/Seoul",
+    )
+
+    class FailingSecondBatchClient(FakeClient):
+        def get_item_view(self, product_ids):
+            self.detail_requests.append(product_ids)
+            if product_ids == ["300"]:
+                from domeggook_API.api_client import DomeggookApiError
+
+                raise DomeggookApiError("temporary")
+            return {"domeggook": {"item": [{"no": product_id, "title": f"product {product_id}"} for product_id in product_ids]}}
+
+    first_client = FailingSecondBatchClient()
+    first_result = collect_details(tmp_path, config, client=first_client)
+
+    assert first_result["failureCount"] == 1
+    assert first_client.detail_requests == [["100", "200"], ["300"]]
+
+    second_client = FakeClient()
+    second_result = collect_details(tmp_path, config, client=second_client)
+
+    assert second_result["failureCount"] == 0
+    assert second_client.detail_requests == [["300"]]
+
+
 def _config():
     return DomeggookConfig(
         discovery=DiscoveryConfig(markets=("dome", "supply"), sorts={"popular": "ha", "ranking": "rd", "recent": "da"}, items_per_keyword=20),

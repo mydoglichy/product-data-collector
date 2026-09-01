@@ -59,3 +59,14 @@
 현재 `init_schema()`는 `product_search_ranks`에서 도매꾹/도매매 비랭킹 sort(`da`, `aa`, `ad`, `sd`, `qa`, `qd`, `se`)와 `rank <= 0`인 기존 row를 제거하고, unique 기준을 `(platform, collected_at, keyword, category_code, market, sort, external_product_id, rank)`로 보강한다.
 
 이번 배송비 정책 변경은 기존 `product_shipping_fees.payload` JSONB에 원본과 구조화 정보를 보강하는 방식으로 처리한다. 새 DB 컬럼은 추가하지 않는다.
+
+## 재개 수집 상태
+
+오너클랜과 도매꾹/도매매 수집기는 저장 성공 이후에만 체크포인트를 갱신한다. 같은 `runCollectedAt`으로 재개하므로 중복 호출이 생겨도 DB unique/upsert 조건으로 같은 수집 시점의 중복 row는 추가되지 않는다.
+
+- 오너클랜 카테고리 수집: `ownerclan_API/data/state/category-collection-state.json`
+- 오너클랜 상세 수집: `ownerclan_API/data/state/detail-collection-state.json`
+- 도매꾹/도매매 discovery: `domeggook_API/data/state/discovery-state.json`
+- 도매꾹/도매매 상세 수집: `domeggook_API/data/state/detail-collection-state.json`
+
+정상 완료된 재개 상태 파일은 삭제된다. 상태 파일이 남아 있으면 다음 실행에서 저장 완료 지점 다음부터 재개한다.
