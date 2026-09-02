@@ -14,9 +14,9 @@
 | `product_prices.market` | `coupang` |
 | `product_prices.price_type` | `primary` |
 | `product_prices.amount` | `productPrice` |
-| `product_inventory.stock_quantity` | 검색 API에 없음, 보통 `NULL` |
+| `product_inventory.stock_quantity` | 검색 API에 없음. 재고 값이 없으므로 row를 저장하지 않음 |
 | `product_shipping_fees.market` | `coupang` |
-| `product_shipping_fees.is_free_shipping` | `isFreeShipping` |
+| `product_shipping_fees.is_free_shipping` | `isFreeShipping` 값이 있을 때 저장 |
 
 ## raw 샘플
 

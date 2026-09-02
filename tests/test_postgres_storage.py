@@ -4,7 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from postgres_storage import _search_rank_rows, _snapshot_row, load_postgres_config, save_product_snapshots_if_enabled
+from postgres_storage import (
+    _has_inventory_snapshot,
+    _has_shipping_snapshot,
+    _search_rank_rows,
+    _snapshot_row,
+    load_postgres_config,
+    save_product_snapshots_if_enabled,
+)
 
 
 def test_load_postgres_config_reads_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,6 +81,125 @@ def test_snapshot_row_preserves_falsy_inventory_and_shipping_values() -> None:
     assert row is not None
     assert row["stock_quantity"] == 0
     assert row["is_free_shipping"] is False
+
+
+def test_empty_inventory_snapshot_is_skipped_for_coupang_search_records() -> None:
+    row = _snapshot_row(
+        "coupang",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "123",
+            "productName": "Sample",
+            "productPrice": 12000,
+        },
+    )
+
+    assert row is not None
+    assert row["stock_quantity"] is None
+    assert not _has_inventory_snapshot(row)
+
+
+def test_inventory_snapshot_keeps_zero_and_source_inventory_values() -> None:
+    zero_row = _snapshot_row(
+        "ownerclan",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "zero-stock",
+            "inventory": {"stockQuantity": 0},
+        },
+    )
+    api_quantity_row = _snapshot_row(
+        "ownerclan",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "api-stock",
+            "inventory": {
+                "stockQuantity": None,
+                "stockQuantitySource": "sum(options[].quantity)",
+                "apiStockQuantity": 10,
+            },
+        },
+    )
+
+    assert zero_row is not None
+    assert api_quantity_row is not None
+    assert _has_inventory_snapshot(zero_row)
+    assert _has_inventory_snapshot(api_quantity_row)
+
+
+def test_empty_ownerclan_inventory_snapshot_is_skipped_when_only_source_label_exists() -> None:
+    row = _snapshot_row(
+        "ownerclan",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "missing-stock",
+            "inventory": {
+                "stockQuantity": None,
+                "stockQuantitySource": "sum(options[].quantity)",
+                "apiStockQuantity": None,
+            },
+        },
+    )
+
+    assert row is not None
+    assert not _has_inventory_snapshot(row)
+
+
+def test_empty_domeggook_inventory_snapshot_is_skipped() -> None:
+    row = _snapshot_row(
+        "domeggook",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "missing-stock",
+            "inventory": {
+                "stockQuantity": None,
+                "domeMoq": None,
+                "domeMaxOrderQuantity": None,
+                "domeOrderUnit": None,
+                "supplyOrderUnit": None,
+            },
+        },
+    )
+
+    assert row is not None
+    assert not _has_inventory_snapshot(row)
+
+
+def test_shipping_snapshot_keeps_coupang_free_shipping_flag() -> None:
+    row = _snapshot_row(
+        "coupang",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "123",
+            "productPrice": 12000,
+            "isFreeShipping": False,
+        },
+    )
+
+    assert row is not None
+    assert row["is_free_shipping"] is False
+    assert _has_shipping_snapshot(row["shipping_rows"][0], row)
+
+
+def test_empty_shipping_snapshot_is_skipped_when_source_has_no_values() -> None:
+    row = _snapshot_row(
+        "ownerclan",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "missing-shipping",
+            "shipping": {
+                "fee": None,
+                "feeRaw": None,
+                "type": None,
+                "typeRaw": None,
+                "isFreeShipping": None,
+                "sourceFields": {"shippingFee": None, "shippingType": None},
+            },
+        },
+    )
+
+    assert row is not None
+    assert not _has_shipping_snapshot(row["shipping_rows"][0], row)
 
 
 def test_snapshot_row_splits_domeggook_market_prices_and_shipping() -> None:

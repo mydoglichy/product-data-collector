@@ -26,6 +26,13 @@
 - rank가 없는 데이터는 저장하지 않으며 `rank=0`으로 대체하지 않는다.
 - 순위 이력 unique 기준은 상품번호 단독이 아니다. `(platform, collected_at, keyword, category_code, market, sort, external_product_id, rank)`로 같은 상품도 수집 시각, keyword, category, market, sort가 다르면 별도 이력으로 보존한다.
 
+## `product_inventory`
+
+수집 시점별 재고 snapshot이다.
+
+- `stock_quantity`와 inventory payload에 의미 있는 원본 값이 모두 없으면 row를 저장하지 않는다.
+- `stock_quantity=0`은 실제 재고 0으로 보고 저장한다.
+
 ## `product_shipping_fees`
 
 수집 시점별 배송비 snapshot이다.
@@ -36,6 +43,8 @@
 - `shipping_type`: 정규화된 배송비 타입. `fixed`, `quantity_proportional`, `quantity_tiered`, `free`, `unknown`
 - `is_free_shipping`: source payload 또는 정규화 단계에서 확인 가능한 무료배송 여부. 확인할 수 없으면 `NULL`
 - `payload`: 배송 section 원본 값과 파싱 가능한 구조화 결과
+
+배송비, 배송비 타입, 무료배송 여부, payload 원본 값이 모두 없으면 row를 저장하지 않는다. `fee=0`과 `is_free_shipping=False`는 의미 있는 값으로 보고 저장한다.
 
 수집기와 DB 저장 단계는 실제 판매수량 기준 배송비, 개당 배송비, MOQ 배분, 마진을 계산하지 않는다. 플랫폼 서버가 판매수량, MOQ, 판매 채널 정책을 알고 계산한다.
 
