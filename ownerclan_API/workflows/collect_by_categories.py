@@ -15,7 +15,6 @@ from .discover_products import make_client
 from ..services.logging_config import configure_logging
 from ..services.normalization import extract_connection_items, normalize_item
 from ..api.queries import all_items_query
-from ..persistence.storage import load_tracked_products, merge_discovered_product, save_tracked_products
 from ..persistence.storage import clear_state, load_state, save_state
 from ..services.time_utils import now_iso
 
@@ -46,7 +45,6 @@ def collect_by_categories(
         collected_at = str(state["runCollectedAt"])
     resume_category_key = str(state.get("categoryKey") or "") or None
     resume_after = str(state.get("after") or "") or None
-    tracked = load_tracked_products(config.output.tracked_products_path)
     failures: list[dict[str, Any]] = []
     category_pages = 0
     success_count = 0
@@ -89,7 +87,6 @@ def collect_by_categories(
                     continue
                 product = normalize_item(item, collected_at)
                 page_products_by_key[product_key] = product
-                merge_discovered_product(tracked, product_key, None, f"category:{category_key}", collected_at)
                 if item_limit is not None and success_count + len(page_products_by_key) >= item_limit:
                     break
 
@@ -98,7 +95,6 @@ def collect_by_categories(
                     project_root=project_root,
                     config=config,
                     collected_at=collected_at,
-                    tracked=tracked,
                     products=page_products_by_key,
                 )
             success_count += len(page_products_by_key)
@@ -157,7 +153,7 @@ def collect_by_categories(
         "categoryCount": len(categories),
         "pageCount": category_pages,
         "successCount": success_count,
-        "trackedCount": len(tracked),
+        "trackedCount": 0,
         "failureCount": len(failures),
     }
 
@@ -167,10 +163,8 @@ def _save_ownerclan_category_page(
     project_root: Path,
     config: OwnerclanConfig,
     collected_at: str,
-    tracked: dict[str, dict[str, Any]],
     products: dict[str, dict[str, Any]],
 ) -> None:
-    save_tracked_products(config.output.tracked_products_path, tracked)
     save_product_raw_samples_if_enabled(
         project_root=project_root,
         platform="ownerclan",

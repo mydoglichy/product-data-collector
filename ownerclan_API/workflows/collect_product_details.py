@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
+from postgres_storage import discovered_product_ids, save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
 
 from ..api.client import OwnerclanGraphQLError
 from ..config import OwnerclanConfig, find_project_root, load_config
@@ -18,9 +18,7 @@ from ..services.logging_config import configure_logging
 from ..services.normalization import normalize_item
 from ..api.queries import item_query, items_query
 from ..persistence.storage import (
-    active_product_keys,
     clear_state,
-    load_tracked_products,
     load_state,
     save_state,
 )
@@ -38,10 +36,7 @@ def collect_details(
     dry_run: bool = False,
     client: Any | None = None,
 ) -> dict[str, int]:
-    tracked = load_tracked_products(config.output.tracked_products_path)
-    product_keys = active_product_keys(tracked)
-    if product_limit is not None:
-        product_keys = product_keys[:product_limit]
+    product_keys = discovered_product_ids(project_root=project_root, platform="ownerclan", limit=product_limit)
     client = client or make_client(project_root, config)
 
     state_path = config.output.state_dir / "detail-collection-state.json"

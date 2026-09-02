@@ -11,12 +11,10 @@ from ..api.client import DomeggookApiError, DomeggookClient, create_domeggook_cl
 from ..config import DomeggookConfig, find_project_root, load_api_keys, load_config
 from ..services.logging_config import configure_logging
 from ..services.parsing import parse_detail_products
-from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
+from postgres_storage import discovered_product_ids, save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
 
 from ..persistence.storage import (
-    active_product_ids,
     clear_state,
-    load_tracked_products,
     load_state,
     save_state,
 )
@@ -35,10 +33,7 @@ def collect_details(
     client: DomeggookClient | None = None,
 ) -> dict[str, int]:
     data_dir = project_root / "domeggook_API" / "data"
-    tracked = load_tracked_products(data_dir / "state" / "tracked_products.json")
-    product_ids = active_product_ids(tracked)
-    if product_limit is not None:
-        product_ids = product_ids[:product_limit]
+    product_ids = discovered_product_ids(project_root=project_root, platform="domeggook", limit=product_limit)
 
     if client is None:
         api_keys = load_api_keys(project_root)

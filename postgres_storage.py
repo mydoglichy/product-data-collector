@@ -109,6 +109,116 @@ def product_counts(project_root: Path | None = None) -> dict[str, int]:
     return {str(row["platform"]): int(row["count"]) for row in rows}
 
 
+def discovered_product_ids(
+    *,
+    project_root: Path,
+    platform: str,
+    limit: int | None = None,
+) -> list[str]:
+    if not postgres_enabled(project_root):
+        return []
+    config = load_postgres_config(project_root)
+    with connect(config) as connection:
+        init_schema(connection)
+        query = """
+            SELECT external_product_id
+            FROM product_discovery_targets
+            WHERE platform = %s AND active
+            ORDER BY first_discovered_at, external_product_id
+        """
+        params: tuple[Any, ...] = (platform,)
+        if limit is not None:
+            query += " LIMIT %s"
+            params = (platform, limit)
+        rows = connection.execute(query, params).fetchall()
+    return [str(row["external_product_id"]) for row in rows]
+
+
+def save_discovered_product_ids_if_enabled(
+    *,
+    project_root: Path,
+    platform: str,
+    records: Iterable[dict[str, Any]],
+    logger: logging.Logger | None = None,
+) -> int:
+    if not postgres_enabled(project_root):
+        return 0
+
+    rows = _discovery_target_rows(platform, records)
+    if not rows:
+        return 0
+
+    inserted_count = 0
+    config = load_postgres_config(project_root)
+    with connect(config) as connection:
+        init_schema(connection)
+        for row in rows:
+            inserted = connection.execute(
+                """
+                INSERT INTO product_discovery_targets (
+                    platform,
+                    external_product_id,
+                    first_discovered_at,
+                    last_discovered_at,
+                    keyword,
+                    category_code,
+                    category_name,
+                    market,
+                    reason,
+                    payload
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (platform, external_product_id) DO NOTHING
+                RETURNING id
+                """,
+                (
+                    row["platform"],
+                    row["external_product_id"],
+                    row["discovered_at"],
+                    row["discovered_at"],
+                    row["keyword"],
+                    row["category_code"],
+                    row["category_name"],
+                    row["market"],
+                    row["reason"],
+                    Jsonb(_json_safe(row["payload"])),
+                ),
+            ).fetchone()
+            if inserted:
+                inserted_count += 1
+                continue
+            connection.execute(
+                """
+                UPDATE product_discovery_targets
+                SET last_discovered_at = %s,
+                    keyword = COALESCE(%s, keyword),
+                    category_code = COALESCE(%s, category_code),
+                    category_name = COALESCE(%s, category_name),
+                    market = COALESCE(%s, market),
+                    reason = COALESCE(%s, reason),
+                    payload = %s,
+                    active = true,
+                    updated_at = now()
+                WHERE platform = %s AND external_product_id = %s
+                """,
+                (
+                    row["discovered_at"],
+                    row["keyword"],
+                    row["category_code"],
+                    row["category_name"],
+                    row["market"],
+                    row["reason"],
+                    Jsonb(_json_safe(row["payload"])),
+                    row["platform"],
+                    row["external_product_id"],
+                ),
+            )
+        connection.commit()
+    if logger is not None:
+        logger.info("saved PostgreSQL discovery targets count=%d newCount=%d", len(rows), inserted_count)
+    return inserted_count
+
+
 def init_schema(connection: Connection[Any]) -> None:
     statements = (
         """
@@ -198,6 +308,25 @@ def init_schema(connection: Connection[Any]) -> None:
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             CONSTRAINT product_search_ranks_history_key
                 UNIQUE (platform, collected_at, keyword, category_code, market, sort, external_product_id, rank)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS product_discovery_targets (
+            id BIGSERIAL PRIMARY KEY,
+            platform TEXT NOT NULL,
+            external_product_id TEXT NOT NULL,
+            active BOOLEAN NOT NULL DEFAULT true,
+            first_discovered_at TIMESTAMPTZ NOT NULL,
+            last_discovered_at TIMESTAMPTZ NOT NULL,
+            keyword TEXT NULL,
+            category_code TEXT NULL,
+            category_name TEXT NULL,
+            market TEXT NULL,
+            reason TEXT NULL,
+            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (platform, external_product_id)
         )
         """,
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS backup_image_url TEXT NULL",
@@ -438,6 +567,7 @@ def init_schema(connection: Connection[Any]) -> None:
         "CREATE INDEX IF NOT EXISTS idx_product_shipping_fees_product_collected_at ON product_shipping_fees(product_id, collected_at)",
         "CREATE INDEX IF NOT EXISTS idx_product_raw_samples_platform_collected_at ON product_raw_samples(platform, collected_at)",
         "CREATE INDEX IF NOT EXISTS idx_product_search_ranks_platform_collected_at ON product_search_ranks(platform, collected_at)",
+        "CREATE INDEX IF NOT EXISTS idx_product_discovery_targets_platform_active ON product_discovery_targets(platform, active, first_discovered_at)",
     )
     with connection.cursor() as cursor:
         for statement in statements:
@@ -631,6 +761,34 @@ def _search_rank_rows(platform: str, records: Iterable[dict[str, Any]]) -> list[
                 "reason": _text_or_none(record.get("reason")),
                 "external_product_id": str(product_id),
                 "rank": rank,
+                "payload": record,
+            }
+        )
+    return rows
+
+
+def _discovery_target_rows(platform: str, records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        product_id = record.get("productId") or record.get("productKey") or record.get("externalProductId")
+        discovered_at = record.get("collectedAt") or record.get("discoveredAt")
+        if product_id in (None, "") or discovered_at in (None, ""):
+            continue
+        external_id = str(product_id)
+        if external_id in seen:
+            continue
+        seen.add(external_id)
+        rows.append(
+            {
+                "platform": platform,
+                "external_product_id": external_id,
+                "discovered_at": _parse_datetime(str(discovered_at)),
+                "keyword": _text_or_none(record.get("keyword")),
+                "category_code": _text_or_none(record.get("categoryCode")),
+                "category_name": _text_or_none(record.get("categoryName")),
+                "market": _text_or_none(record.get("market")),
+                "reason": _text_or_none(record.get("reason")),
                 "payload": record,
             }
         )

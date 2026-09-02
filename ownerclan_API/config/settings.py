@@ -42,7 +42,6 @@ class RequestConfig:
 
 @dataclass(frozen=True)
 class OutputConfig:
-    tracked_products_path: Path
     category_cache_path: Path
     output_dir: Path
     state_dir: Path
@@ -133,7 +132,6 @@ def load_config(path: Path, project_root: Path | None = None) -> OwnerclanConfig
             ),
         ),
         output=OutputConfig(
-            tracked_products_path=_resolve(root, output.get("tracked_products_path") or "ownerclan_API/data/state/tracked_products.json"),
             category_cache_path=_resolve(root, output.get("category_cache_path") or "ownerclan_API/data/state/categories.json"),
             output_dir=_resolve(root, output.get("output_dir") or "ownerclan_API/data/processed"),
             state_dir=_resolve(root, output.get("state_dir") or "ownerclan_API/data/state"),

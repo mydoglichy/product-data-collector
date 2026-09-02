@@ -22,7 +22,7 @@
 ## 실행 상태 파일
 
 - `data/state/categories.json`: 최하위 카테고리 캐시
-- `data/state/tracked_products.json`: 상세 수집 대상 상품
+- PostgreSQL `product_discovery_targets`: 키워드 기반 상세 수집 대상 상품 key
 - `data/state/incremental-state.json`: 증분 수집 기준 시각
 
 `config/keywords.txt` 기반 discovery 모듈은 남아 있지만 기본 실행 경로가 아니다.
@@ -44,7 +44,7 @@ python -m ownerclan_API --refresh-categories --limit 1 --dry-run
 
 ## 재개 상태 파일
 
-수집기는 중복 호출을 허용하고 데이터 손실을 줄이는 방식으로 동작한다. 페이지나 배치 데이터를 PostgreSQL과 `tracked_products.json`에 저장한 뒤에만 다음 시작 위치를 상태 파일에 기록한다. 같은 `runCollectedAt`으로 재개하므로 중복 호출이 발생해도 DB unique/upsert 조건으로 같은 수집 시점의 중복 row는 추가되지 않는다.
+수집기는 중복 호출을 허용하고 데이터 손실을 줄이는 방식으로 동작한다. 페이지나 배치 데이터를 PostgreSQL에 저장한 뒤에만 다음 시작 위치를 상태 파일에 기록한다. 같은 `runCollectedAt`으로 재개하므로 중복 호출이 발생해도 DB unique/upsert 조건으로 같은 수집 시점의 중복 row는 추가되지 않는다.
 
 - `data/state/category-collection-state.json`: 카테고리 전체 순회 재개 지점. `categoryKey`와 GraphQL `after` cursor를 저장한다.
 - `data/state/detail-collection-state.json`: 상세 수집 재개 지점. 정렬된 상품번호 목록의 `trackedListHash`, `nextIndex`, `lastCompletedProductId`를 저장한다.

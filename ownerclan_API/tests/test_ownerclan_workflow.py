@@ -16,7 +16,6 @@ from ownerclan_API.services.normalization import calculate_total_stock, normaliz
 from ownerclan_API.persistence.storage import (
     atomic_write_json,
     load_json_object,
-    load_tracked_products,
 )
 from ownerclan_API.workflows.sync_incremental import sync_incremental
 
@@ -76,17 +75,23 @@ def test_keyword_default_and_new_search_and_dedupes_product_keys(tmp_path):
     config = _config(tmp_path)
     config.discovery.keyword_file.write_text("case\ncase\n", encoding="utf-8")
     client = FakeClient()
-    result = discover(tmp_path, config, client=client)
+    saved_targets = []
+
+    import ownerclan_API.workflows.discover_products as discover_module
+    original_save_targets = discover_module.save_discovered_product_ids_if_enabled
+    discover_module.save_discovered_product_ids_if_enabled = lambda **kwargs: saved_targets.extend(kwargs["records"]) or 2
+    try:
+        result = discover(tmp_path, config, client=client)
+    finally:
+        discover_module.save_discovered_product_ids_if_enabled = original_save_targets
 
     assert result["discoveredCount"] == 4
     assert result["newProductCount"] == 2
     assert len(client.queries) == 2
     assert "sortBy:" not in client.queries[0]
     assert "sortBy: registerDateDesc" in client.queries[1]
-    tracked = load_tracked_products(config.output.tracked_products_path)
-    assert set(tracked) == {"W1", "W2"}
-    assert "searchTypes" not in tracked["W1"]
-    assert tracked["W1"]["reasons"] == ["default", "registerDateDesc"]
+    assert {record["productId"] for record in saved_targets} == {"W1", "W2"}
+    assert {record["reason"] for record in saved_targets} == {"default", "registerDateDesc"}
     assert not list(config.output.output_dir.glob("ownerclan_*_search-ranks.json"))
 
 
@@ -114,9 +119,7 @@ def test_category_collection_refreshes_leaf_cache_and_saves_products(tmp_path):
     cached = load_json_object(config.output.category_cache_path)
     assert cached["leafCategoryCount"] == 1
     assert cached["categories"][0]["key"] == "C1-1"
-    tracked = load_tracked_products(config.output.tracked_products_path)
-    assert set(tracked) == {"W1", "W2"}
-    assert tracked["W1"]["reasons"] == ["category:C1-1"]
+    assert not (config.output.state_dir / "tracked_products.json").exists()
     assert len(saved["raw"]) == 1
     assert len(saved["snapshots"]) == 1
 
@@ -212,21 +215,23 @@ def test_multiple_item_query_falls_back_to_items_by_keys_then_single_item():
 
 def test_collect_details_saves_products_to_postgres_without_json_outputs(tmp_path):
     config = _config(tmp_path)
-    atomic_write_json(config.output.tracked_products_path, {"W1": {"productId": "W1", "active": True}})
     client = FakeClient()
     saved = {"raw": [], "snapshots": []}
 
     import ownerclan_API.workflows.collect_product_details as collect_module
     original_raw = collect_module.save_product_raw_samples_if_enabled
     original_snapshots = collect_module.save_product_snapshots_if_enabled
+    original_targets = collect_module.discovered_product_ids
     collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: saved["raw"].append(kwargs) or 1
     collect_module.save_product_snapshots_if_enabled = lambda **kwargs: saved["snapshots"].append(kwargs) or 1
+    collect_module.discovered_product_ids = lambda **kwargs: ["W1", "W2"]
 
     try:
         result = collect_details(tmp_path, config, client=client)
     finally:
         collect_module.save_product_raw_samples_if_enabled = original_raw
         collect_module.save_product_snapshots_if_enabled = original_snapshots
+        collect_module.discovered_product_ids = original_targets
 
     assert result["successCount"] == 2
     assert len(saved["raw"]) == 1
@@ -242,10 +247,6 @@ def test_collect_details_saves_products_to_postgres_without_json_outputs(tmp_pat
 
 def test_collect_details_resumes_from_saved_batch_index(tmp_path):
     config = _config(tmp_path)
-    atomic_write_json(
-        config.output.tracked_products_path,
-        {value: {"productId": value, "active": True} for value in ("W1", "W2", "W3")},
-    )
 
     class FailingSecondBatchClient(FakeClient):
         def graphql(self, query):
@@ -259,8 +260,10 @@ def test_collect_details_resumes_from_saved_batch_index(tmp_path):
     import ownerclan_API.workflows.collect_product_details as collect_module
     original_raw = collect_module.save_product_raw_samples_if_enabled
     original_snapshots = collect_module.save_product_snapshots_if_enabled
+    original_targets = collect_module.discovered_product_ids
     collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
     collect_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+    collect_module.discovered_product_ids = lambda **kwargs: ["W1", "W2", "W3"]
 
     try:
         first_client = FailingSecondBatchClient()
@@ -268,6 +271,7 @@ def test_collect_details_resumes_from_saved_batch_index(tmp_path):
     finally:
         collect_module.save_product_raw_samples_if_enabled = original_raw
         collect_module.save_product_snapshots_if_enabled = original_snapshots
+        collect_module.discovered_product_ids = original_targets
 
     assert first_result["failureCount"] == 1
 
@@ -281,12 +285,14 @@ def test_collect_details_resumes_from_saved_batch_index(tmp_path):
 
     collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
     collect_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+    collect_module.discovered_product_ids = lambda **kwargs: ["W1", "W2", "W3"]
     try:
         second_client = ResumingClient()
         second_result = collect_details(tmp_path, config, client=second_client)
     finally:
         collect_module.save_product_raw_samples_if_enabled = original_raw
         collect_module.save_product_snapshots_if_enabled = original_snapshots
+        collect_module.discovered_product_ids = original_targets
 
     assert second_result["failureCount"] == 0
     assert len(second_client.queries) == 1
@@ -364,10 +370,7 @@ def test_incremental_item_limit_stops_after_requested_items(tmp_path):
         sync_module.save_product_snapshots_if_enabled = original_snapshots
 
     assert result["successCount"] == 1
-    tracked = load_tracked_products(config.output.tracked_products_path)
-    assert tracked["W1"]["keywords"] == []
-    assert "searchTypes" not in tracked["W1"]
-    assert tracked["W1"]["reasons"] == ["updated_date_range"]
+    assert not (config.output.state_dir / "tracked_products.json").exists()
 
 
 def test_options_stock_status_normalization_and_source_specific_preserved():
@@ -506,7 +509,7 @@ def _config(tmp_path: Path):
         details=DetailsConfig(batch_size=2),
         incremental=IncrementalConfig(page_size=2, overlap_minutes=120, include_item_histories=False),
         request=RequestConfig(interval_seconds=0, timeout_seconds=10, max_retries=0, retry_after_max_seconds=1),
-        output=OutputConfig(state_dir / "tracked_products.json", state_dir / "categories.json", output_dir, state_dir, log_dir, 3),
+        output=OutputConfig(state_dir / "categories.json", output_dir, state_dir, log_dir, 3),
         timezone="Asia/Seoul",
     )
 

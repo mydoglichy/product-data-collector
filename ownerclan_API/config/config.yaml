@@ -14,13 +14,12 @@ incremental:
   include_item_histories: false
 
 request:
-  interval_seconds: 1.0
+  interval_seconds: 0.8
   timeout_seconds: 20
   max_retries: 3
   retry_after_max_seconds: 60
 
 output:
-  tracked_products_path: ownerclan_API/data/state/tracked_products.json
   category_cache_path: ownerclan_API/data/state/categories.json
   output_dir: ownerclan_API/data/processed
   state_dir: ownerclan_API/data/state
