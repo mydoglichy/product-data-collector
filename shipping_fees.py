@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import re
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
+
+from numeric_utils import parse_decimal
 
 
 _PAIR_RE = re.compile(r"^\s*([0-9][0-9,]*)\s*\+\s*([0-9][0-9,]*)\s*$")
@@ -171,9 +173,4 @@ def _parse_pairs(value: Any) -> list[tuple[int, Decimal]]:
 
 
 def _decimal_or_none(value: Any) -> Decimal | None:
-    if value in (None, "") or isinstance(value, bool):
-        return None
-    try:
-        return Decimal(str(value).replace(",", "").strip())
-    except (InvalidOperation, ValueError):
-        return None
+    return parse_decimal(value)

@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -17,6 +17,7 @@ from psycopg import Connection
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from numeric_utils import parse_decimal
 from product_history import comparable_state, external_product_id, fingerprint_state, normalize_current_product
 from shipping_fees import parse_shipping_fee
 
@@ -1078,9 +1079,4 @@ def _json_safe(value: Any) -> Any:
 
 
 def _decimal_or_none(value: Any) -> Decimal | None:
-    if value in (None, "") or isinstance(value, bool):
-        return None
-    try:
-        return Decimal(str(value).replace(",", "").strip())
-    except (InvalidOperation, ValueError):
-        return None
+    return parse_decimal(value)

@@ -29,7 +29,7 @@ Unique: `(platform, external_product_id)`
 | `collected_at` | `TIMESTAMPTZ` | No | 수집 시각 |
 | `market` | `TEXT` | No | 가격 market. 예: `ownerclan`, `dome`, `supply`, `retail` |
 | `price_type` | `TEXT` | No | `primary`, `current_supply`, `fixed`, `minimum_retail`, `recommended_retail` |
-| `amount` | `NUMERIC(18, 2)` | Yes | 숫자로 변환 가능한 가격. 조건식/비정형 값은 `NULL` |
+| `amount` | `NUMERIC(18, 2)` | Yes | 숫자로 변환 가능한 가격. 쉼표, 공백, `원`, `$` 표기는 제거해 저장하며 조건식/비정형 값은 `NULL` |
 | `currency` | `CHAR(3)` | No | 기본 `KRW` |
 | `payload` | `JSONB` | No | 가격 section 전체 |
 
