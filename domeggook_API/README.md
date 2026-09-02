@@ -15,7 +15,7 @@
 
 - `config/keywords.txt`: discovery 입력
 - `data/state/categories.json`: 최하위 카테고리 캐시
-- `data/state/tracked_products.json`: 상세 수집 대상 상품
+- PostgreSQL `product_discovery_targets`: 상세 수집 대상 상품번호
 - `data/state/discovery-state.json`: discovery 재개 위치
 - `data/state/detail-collection-state.json`: 상세 수집 재개 위치
 

@@ -18,10 +18,7 @@ from ..services.normalization import extract_connection_items, normalize_item
 from ..api.queries import all_items_query, item_histories_query
 from ..persistence.storage import (
     load_state,
-    merge_discovered_product,
     save_state,
-    save_tracked_products,
-    load_tracked_products,
 )
 from ..services.time_utils import now_iso, to_unix_millis
 
@@ -120,12 +117,6 @@ def sync_incremental(
             LOGGER.error("ownerclan itemHistories sync failed error=%s", exc)
 
     if not dry_run:
-        tracked = load_tracked_products(config.output.tracked_products_path)
-        for product in products:
-            key = str(product.get("productId") or "")
-            if key:
-                merge_discovered_product(tracked, key, None, "updated_date_range", collected_at)
-        save_tracked_products(config.output.tracked_products_path, tracked)
         save_product_raw_samples_if_enabled(
             project_root=project_root,
             platform="ownerclan",

@@ -47,7 +47,7 @@
 
 ## 재개 상태 파일
 
-`data/state/discovery-state.json`과 `data/state/detail-collection-state.json`은 상품 데이터 저장소가 아니라 재개용 체크포인트다. 수집기는 PostgreSQL 저장과 `tracked_products.json` 저장이 성공한 뒤에만 다음 페이지 또는 다음 배치 위치를 기록한다.
+`data/state/discovery-state.json`과 `data/state/detail-collection-state.json`은 상품 데이터 저장소가 아니라 재개용 체크포인트다. 수집기는 PostgreSQL 저장이 성공한 뒤에만 다음 페이지 또는 다음 배치 위치를 기록한다. 상세 수집 대상 상품번호는 JSON 파일이 아니라 PostgreSQL `product_discovery_targets`에서 읽는다.
 
 - discovery 상태는 `categoryCode`, `market`, `reason`, `sort`, `nextPage`, `runCollectedAt`을 저장한다.
 - 상세 수집 상태는 `trackedListHash`, `nextIndex`, `lastCompletedProductId`, `runCollectedAt`을 저장한다.

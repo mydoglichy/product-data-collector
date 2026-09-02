@@ -13,8 +13,8 @@ from ..services.logging_config import configure_logging
 from ..services.normalization import extract_connection_items
 from ..api.queries import all_items_query
 from ..api.rate_limiter import RateLimiter
-from ..persistence.storage import load_tracked_products, merge_discovered_product, save_tracked_products
 from ..services.time_utils import now_iso
+from postgres_storage import save_discovered_product_ids_if_enabled
 
 
 LOGGER = logging.getLogger("ownerclan_API.discover_products")
@@ -33,10 +33,11 @@ def discover(
         keywords = keywords[:keyword_limit]
     client = client or make_client(project_root, config)
 
-    tracked = load_tracked_products(config.output.tracked_products_path)
     discovered = 0
     new_products = 0
     failures = 0
+    discovery_target_records: list[dict[str, Any]] = []
+    seen_product_keys: set[str] = set()
 
     searches = [
         ("default", None, config.discovery.top_limit_per_keyword),
@@ -66,17 +67,31 @@ def discover(
                     continue
                 product_key = str(product_key)
                 discovered += 1
-                if merge_discovered_product(tracked, product_key, keyword, stored_sort_by, collected_at):
+                if product_key not in seen_product_keys:
+                    seen_product_keys.add(product_key)
                     new_products += 1
+                discovery_target_records.append(
+                    {
+                        "collectedAt": collected_at,
+                        "keyword": keyword,
+                        "reason": stored_sort_by,
+                        "productId": product_key,
+                    }
+                )
 
     if not dry_run:
-        save_tracked_products(config.output.tracked_products_path, tracked)
+        save_discovered_product_ids_if_enabled(
+            project_root=project_root,
+            platform="ownerclan",
+            records=discovery_target_records,
+            logger=LOGGER,
+        )
 
     return {
         "keywordCount": len(keywords),
         "discoveredCount": discovered,
         "newProductCount": new_products,
-        "trackedCount": len(tracked),
+        "trackedCount": 0,
         "failureCount": failures,
     }
 

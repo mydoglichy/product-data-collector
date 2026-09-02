@@ -46,51 +46,6 @@ class FileLock:
                 pass
 
 
-def load_tracked_products(path: Path) -> dict[str, dict[str, Any]]:
-    if not path.exists():
-        return {}
-    with path.open("r", encoding="utf-8") as fp:
-        payload = json.load(fp)
-    if not isinstance(payload, dict):
-        raise ValueError(f"tracked products file must contain an object: {path}")
-    return {str(key): value for key, value in payload.items() if isinstance(value, dict)}
-
-
-def merge_discovered_product(
-    tracked: dict[str, dict[str, Any]],
-    product_id: str,
-    keyword: str,
-    market: str,
-    reason: str,
-    seen_at: str,
-) -> bool:
-    created = product_id not in tracked
-    record = tracked.setdefault(
-        product_id,
-        {
-            "productId": product_id,
-            "keywords": [],
-            "markets": [],
-            "reasons": [],
-            "firstSeenAt": seen_at,
-            "lastSeenAt": seen_at,
-            "active": True,
-        },
-    )
-    record["productId"] = str(record.get("productId") or product_id)
-    record["keywords"] = _append_unique(record.get("keywords"), keyword)
-    record["markets"] = _append_unique(record.get("markets"), market)
-    record["reasons"] = _append_unique(record.get("reasons"), reason)
-    record.setdefault("firstSeenAt", seen_at)
-    record["lastSeenAt"] = seen_at
-    record["active"] = bool(record.get("active", True))
-    return created
-
-
-def active_product_ids(tracked: dict[str, dict[str, Any]]) -> list[str]:
-    return sorted(str(product_id) for product_id, record in tracked.items() if record.get("active", True))
-
-
 def atomic_write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_name(f".{path.name}.tmp")
@@ -100,10 +55,6 @@ def atomic_write_json(path: Path, payload: Any) -> None:
         fp.flush()
         os.fsync(fp.fileno())
     os.replace(tmp_path, path)
-
-
-def save_tracked_products(path: Path, tracked: dict[str, dict[str, Any]]) -> None:
-    atomic_write_json(path, tracked)
 
 
 def load_state(path: Path) -> dict[str, Any]:
@@ -129,11 +80,4 @@ def chunked(values: list[str], size: int) -> list[list[str]]:
     if size < 1:
         raise ValueError("size must be greater than zero")
     return [values[index : index + size] for index in range(0, len(values), size)]
-
-
-def _append_unique(values: Any, value: str) -> list[str]:
-    result = [str(item) for item in values] if isinstance(values, list) else []
-    if value not in result:
-        result.append(value)
-    return result
 

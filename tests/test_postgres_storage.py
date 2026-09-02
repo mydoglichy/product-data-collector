@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from postgres_storage import (
+    _discovery_target_rows,
     _has_inventory_snapshot,
     _has_shipping_snapshot,
     _search_rank_rows,
@@ -38,6 +39,36 @@ def test_load_postgres_config_reads_env_file(tmp_path: Path, monkeypatch: pytest
     assert config.database == "collector_test"
     assert config.user == "collector"
     assert config.password == "secret"
+
+
+def test_discovery_target_rows_dedupe_and_preserve_metadata() -> None:
+    rows = _discovery_target_rows(
+        "domeggook",
+        [
+            {
+                "productId": "100",
+                "collectedAt": "2026-08-30T10:00:00Z",
+                "keyword": "bag",
+                "categoryCode": "01",
+                "categoryName": "bags",
+                "market": "dome",
+                "reason": "recent",
+            },
+            {
+                "productId": "100",
+                "collectedAt": "2026-08-30T10:00:00Z",
+                "keyword": "bag",
+            },
+            {"productId": "", "collectedAt": "2026-08-30T10:00:00Z"},
+        ],
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["platform"] == "domeggook"
+    assert rows[0]["external_product_id"] == "100"
+    assert rows[0]["keyword"] == "bag"
+    assert rows[0]["category_code"] == "01"
+    assert rows[0]["market"] == "dome"
 
 
 def test_snapshot_row_normalizes_product_for_postgres() -> None:

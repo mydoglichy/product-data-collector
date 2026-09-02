@@ -10,9 +10,9 @@ from ..services.categories import load_or_refresh_categories
 from ..config import DomeggookConfig, find_project_root, load_api_keys, load_config
 from ..services.logging_config import configure_logging
 from ..services.parsing import parse_list_header, parse_list_items, parse_product_id
-from ..persistence.storage import clear_state, load_state, load_tracked_products, merge_discovered_product, save_state, save_tracked_products
+from ..persistence.storage import clear_state, load_state, save_state
 from ..services.time_utils import now_iso
-from postgres_storage import save_search_ranks_if_enabled
+from postgres_storage import save_discovered_product_ids_if_enabled, save_search_ranks_if_enabled
 
 
 LOGGER = logging.getLogger("domeggook_API.workflows.discover_products")
@@ -37,13 +37,12 @@ def discover(
     if keyword_limit is not None:
         categories = categories[:keyword_limit]
 
-    tracked_path = data_dir / "state" / "tracked_products.json"
     state_path = data_dir / "state" / "discovery-state.json"
     state = load_state(state_path)
     run_collected_at = str(state.get("runCollectedAt") or now_iso(config.timezone))
-    tracked = load_tracked_products(tracked_path)
     discovered = 0
     new_products = 0
+    seen_product_ids: set[str] = set()
     failures = 0
     stopped_on_failure = False
     page_count = 0
@@ -92,6 +91,7 @@ def discover(
             items_per_page = _positive_int(header.get("itemsPerPage")) or config.discovery.items_per_keyword
             should_save_rank = effective_sort in RANKED_SORTS
             search_rank_records: list[dict[str, object]] = []
+            discovery_target_records: list[dict[str, object]] = []
 
             for index, item in enumerate(items, start=1):
                 rank = _global_rank(current_page, items_per_page, index)
@@ -108,8 +108,23 @@ def discover(
                     )
                     continue
                 discovered += 1
-                if merge_discovered_product(tracked, product_id, category.name, market, reason, collected_at):
+                if product_id not in seen_product_ids:
+                    seen_product_ids.add(product_id)
                     new_products += 1
+                discovery_target_records.append(
+                    {
+                        "collectedAt": collected_at,
+                        "keyword": category.name,
+                        "categoryCode": category.code,
+                        "categoryName": category.name,
+                        "categoryPath": list(category.path),
+                        "market": market,
+                        "sort": effective_sort,
+                        "requestedSort": sort_code,
+                        "reason": reason,
+                        "productId": product_id,
+                    }
+                )
                 if should_save_rank:
                     search_rank_records.append(
                         {
@@ -128,7 +143,12 @@ def discover(
                     )
 
             if not dry_run:
-                save_tracked_products(tracked_path, tracked)
+                save_discovered_product_ids_if_enabled(
+                    project_root=project_root,
+                    platform="domeggook",
+                    records=discovery_target_records,
+                    logger=LOGGER,
+                )
                 save_search_ranks_if_enabled(
                     project_root=project_root,
                     platform="domeggook",
@@ -158,7 +178,7 @@ def discover(
         "pageCount": page_count,
         "discoveredCount": discovered,
         "newProductCount": new_products,
-        "trackedCount": len(tracked),
+        "trackedCount": 0,
         "failureCount": failures,
     }
 
