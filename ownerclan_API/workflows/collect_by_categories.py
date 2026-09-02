@@ -9,7 +9,7 @@ from typing import Any
 from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
 
 from ..services.categories import load_or_refresh_leaf_categories
-from ..api.client import OwnerclanGraphQLError
+from ..api.client import OwnerclanGraphQLError, OwnerclanHttpError
 from ..config import OwnerclanConfig, find_project_root, load_config
 from .discover_products import make_client
 from ..services.logging_config import configure_logging
@@ -46,6 +46,7 @@ def collect_by_categories(
     resume_category_key = str(state.get("categoryKey") or "") or None
     resume_after = str(state.get("after") or "") or None
     failures: list[dict[str, Any]] = []
+    rate_limit_failures = 0
     category_pages = 0
     success_count = 0
 
@@ -76,9 +77,23 @@ def collect_by_categories(
                 items, page_info = extract_connection_items(data, "allItems")
                 category_pages += 1
             except Exception as exc:
+                if not dry_run:
+                    save_state(
+                        state_path,
+                        {"runCollectedAt": collected_at, "categoryKey": category_key, "after": after},
+                    )
+                if _is_rate_limit_exception(exc):
+                    rate_limit_failures += 1
                 failures.append({"categoryKey": category_key, "error": str(exc)})
                 LOGGER.error("failed ownerclan category collection category=%s error=%s", category_key, exc)
-                break
+                return {
+                    "categoryCount": len(categories),
+                    "pageCount": category_pages,
+                    "successCount": success_count,
+                    "trackedCount": 0,
+                    "failureCount": len(failures),
+                    "rateLimitFailureCount": rate_limit_failures,
+                }
 
             page_products_by_key: dict[str, dict[str, Any]] = {}
             for item in items:
@@ -155,6 +170,7 @@ def collect_by_categories(
         "successCount": success_count,
         "trackedCount": 0,
         "failureCount": len(failures),
+        "rateLimitFailureCount": rate_limit_failures,
     }
 
 
@@ -202,6 +218,15 @@ def _without_raw(product: dict[str, Any]) -> dict[str, Any]:
     result = dict(product)
     result.pop("raw", None)
     return result
+
+
+def _is_rate_limit_exception(exc: Exception) -> bool:
+    if isinstance(exc, OwnerclanHttpError) and exc.status_code == 429:
+        return True
+    if isinstance(exc, OwnerclanGraphQLError) and exc.is_retryable_rate_limit():
+        return True
+    text = str(exc).lower()
+    return any(term in text for term in ("http 429", "too many requests", "rate limit", "quota"))
 
 
 def main(argv: list[str] | None = None) -> int:

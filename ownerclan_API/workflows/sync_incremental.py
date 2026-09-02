@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
 
-from ..api.client import OwnerclanGraphQLError
+from ..api.client import OwnerclanGraphQLError, OwnerclanHttpError
 from ..config import OwnerclanConfig, find_project_root, load_config
 from .discover_products import make_client
 from ..services.logging_config import configure_logging
@@ -46,6 +46,7 @@ def sync_incremental(
 
     products: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    rate_limit_failures = 0
     seen_keys: set[tuple[str, Any]] = set()
     after: str | None = None
     seen_cursors: set[str] = set()
@@ -105,6 +106,8 @@ def sync_incremental(
             seen_cursors.add(str(next_cursor))
             after = str(next_cursor)
     except Exception as exc:
+        if _is_rate_limit_exception(exc):
+            rate_limit_failures += 1
         failures.append({"error": str(exc), "stage": "allItems", "dateFrom": date_from, "dateTo": date_to})
         LOGGER.error("ownerclan incremental sync failed error=%s", exc)
 
@@ -141,6 +144,7 @@ def sync_incremental(
         "successCount": len(products),
         "historyCount": len(histories),
         "failureCount": len(failures),
+        "rateLimitFailureCount": rate_limit_failures,
         "stateUpdated": 1 if completed and not failures and not dry_run else 0,
     }
 
@@ -149,6 +153,15 @@ def _without_raw(product: dict[str, Any]) -> dict[str, Any]:
     result = dict(product)
     result.pop("raw", None)
     return result
+
+
+def _is_rate_limit_exception(exc: Exception) -> bool:
+    if isinstance(exc, OwnerclanHttpError) and exc.status_code == 429:
+        return True
+    if isinstance(exc, OwnerclanGraphQLError) and exc.is_retryable_rate_limit():
+        return True
+    text = str(exc).lower()
+    return any(term in text for term in ("http 429", "too many requests", "rate limit", "quota"))
 
 
 def fetch_item_histories(client: Any, config: OwnerclanConfig, date_from: int, date_to: int) -> list[dict[str, Any]]:

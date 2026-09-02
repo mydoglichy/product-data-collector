@@ -14,10 +14,10 @@ incremental:
   include_item_histories: false
 
 request:
-  interval_seconds: 0.8
+  interval_seconds: 1.2
   timeout_seconds: 20
   max_retries: 3
-  retry_after_max_seconds: 60
+  retry_after_max_seconds: 300
 
 output:
   category_cache_path: ownerclan_API/data/state/categories.json

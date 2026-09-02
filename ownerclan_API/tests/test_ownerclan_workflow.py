@@ -343,6 +343,88 @@ def test_incremental_failure_does_not_update_state(tmp_path):
     assert not (config.output.state_dir / "incremental-state.json").exists()
 
 
+def test_ownerclan_run_waits_and_restarts_after_rate_limit(tmp_path):
+    import ownerclan_API.workflows.main as main_module
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+environment: production
+discovery:
+  keyword_file: ownerclan_API/config/keywords.txt
+incremental:
+  page_size: 1000
+request:
+  interval_seconds: 0
+  timeout_seconds: 10
+  max_retries: 0
+  retry_after_max_seconds: 1
+output:
+  category_cache_path: ownerclan_API/data/state/categories.json
+  output_dir: ownerclan_API/data/processed
+  state_dir: ownerclan_API/data/state
+  log_dir: ownerclan_API/data/logs
+timezone: Asia/Seoul
+""".strip(),
+        encoding="utf-8",
+    )
+
+    collect_refresh_args = []
+    sleeps = []
+
+    def fake_collect_by_categories(*args, **kwargs):
+        collect_refresh_args.append(kwargs["refresh_categories"])
+        if len(collect_refresh_args) == 1:
+            return {
+                "categoryCount": 1,
+                "pageCount": 1,
+                "successCount": 1000,
+                "trackedCount": 0,
+                "failureCount": 1,
+                "rateLimitFailureCount": 1,
+            }
+        return {
+            "categoryCount": 1,
+            "pageCount": 1,
+            "successCount": 1000,
+            "trackedCount": 0,
+            "failureCount": 0,
+            "rateLimitFailureCount": 0,
+        }
+
+    def fake_sync_incremental(*args, **kwargs):
+        return {
+            "pageCount": 0,
+            "successCount": 0,
+            "historyCount": 0,
+            "failureCount": 0,
+            "rateLimitFailureCount": 0,
+            "stateUpdated": 1,
+        }
+
+    original_collect = main_module.collect_by_categories
+    original_sync = main_module.sync_incremental
+    original_sleep = main_module.time.sleep
+    main_module.collect_by_categories = fake_collect_by_categories
+    main_module.sync_incremental = fake_sync_incremental
+    main_module.time.sleep = lambda seconds: sleeps.append(seconds)
+    try:
+        result = main_module.run(
+            tmp_path,
+            config_path,
+            refresh_categories=True,
+            rate_limit_retry_seconds=300,
+        )
+    finally:
+        main_module.collect_by_categories = original_collect
+        main_module.sync_incremental = original_sync
+        main_module.time.sleep = original_sleep
+
+    assert sleeps == [300]
+    assert collect_refresh_args == [True, False]
+    assert result["categoryCollection"]["failureCount"] == 0
+
+
 def test_incremental_item_limit_stops_after_requested_items(tmp_path):
     class ManyItemsClient:
         def graphql(self, query):
