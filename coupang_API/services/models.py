@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-import re
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-
-_NUMERIC_TEXT_RE = re.compile(r"^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$")
+from numeric_utils import parse_number
 
 
 @dataclass(frozen=True)
@@ -73,17 +71,7 @@ def _rank(value: Any, fallback: int) -> int | None:
 
 
 def _number(value: Any) -> int | float | Any:
-    if isinstance(value, bool) or value is None:
-        return value
-    if isinstance(value, (int, float)):
-        return value
-    if not isinstance(value, str):
-        return value
-    text = value.strip()
-    if not _NUMERIC_TEXT_RE.fullmatch(text):
-        return value
-    normalized = text.replace(",", "")
-    return float(normalized) if "." in normalized else int(normalized)
+    return parse_number(value)
 
 
 def _query_value(url: Any, key: str) -> str | None:

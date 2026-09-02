@@ -164,6 +164,25 @@ def test_snapshot_row_keeps_zero_shipping_distinct_from_missing_fee() -> None:
     assert missing_row["shipping_rows"][0]["fee"] is None
 
 
+def test_snapshot_row_casts_won_text_prices_for_storage() -> None:
+    row = _snapshot_row(
+        "ownerclan",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "won-price",
+            "prices": {"currentSupplyPrice": " 12,300원 "},
+            "inventory": {"stockQuantity": " 4 "},
+            "shipping": {"fee": "3,000원", "type": "고정배송비"},
+        },
+    )
+
+    assert row is not None
+    assert row["primary_price"] == 12300
+    assert row["price_rows"][0]["amount"] == 12300
+    assert row["stock_quantity"] == 4
+    assert row["shipping_rows"][0]["fee"] == 3000
+
+
 def test_snapshot_row_parses_shipping_payment_separately_from_fee() -> None:
     row = _snapshot_row(
         "domeggook",

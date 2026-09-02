@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import copy
-import re
 from typing import Any
 
-
-_NUMERIC_TEXT_RE = re.compile(r"^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$")
+from numeric_utils import parse_number
 
 
 def parse_list_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -264,17 +262,7 @@ def _iter_image_urls(value: Any):
 
 
 def _number(value: Any) -> int | float | Any:
-    if isinstance(value, bool) or value is None:
-        return value
-    if isinstance(value, (int, float)):
-        return value
-    if not isinstance(value, str):
-        return value
-    text = value.strip()
-    if not _NUMERIC_TEXT_RE.fullmatch(text):
-        return value
-    normalized = text.replace(",", "")
-    return float(normalized) if "." in normalized else int(normalized)
+    return parse_number(value)
 
 
 def _as_list(value: Any) -> list[Any]:

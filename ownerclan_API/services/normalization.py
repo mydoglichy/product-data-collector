@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import copy
-import re
 from typing import Any
 
+from numeric_utils import parse_number
 
-_NUMERIC_TEXT_RE = re.compile(r"^[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$")
 
 STATUS_MAP = {
     "available": "available",
@@ -146,17 +145,7 @@ def calculate_total_stock(options: list[dict[str, Any]]) -> int | None:
 
 
 def number_or_original(value: Any) -> int | float | Any:
-    if isinstance(value, bool) or value is None:
-        return value
-    if isinstance(value, (int, float)):
-        return value
-    if not isinstance(value, str):
-        return value
-    text = value.strip()
-    if not _NUMERIC_TEXT_RE.fullmatch(text):
-        return value
-    normalized = text.replace(",", "")
-    return float(normalized) if "." in normalized else int(normalized)
+    return parse_number(value)
 
 
 def infer_free_shipping(shipping_fee: Any, shipping_type: Any) -> bool | None:

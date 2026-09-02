@@ -128,6 +128,13 @@ def test_ownerclan_in_advance_shipping_type_is_payment_metadata() -> None:
     assert parsed["shipping_fee"] == 3000
 
 
+def test_fixed_shipping_fee_accepts_won_text() -> None:
+    parsed = parse_shipping_fee(" 3,000원 ", "고정배송비")
+
+    assert parsed["shipping_type"] == "fixed"
+    assert parsed["shipping_fee"] == 3000
+
+
 def test_unknown_pair_fee_preserves_rules_without_calculation() -> None:
     parsed = parse_shipping_fee("1+3500|20+5500")
 

@@ -3,9 +3,10 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import re
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from numeric_utils import NUMERIC_TEXT_RE, parse_number
 
 
 MISSING = {"__value__": "__MISSING__"}
@@ -79,8 +80,6 @@ EXPECTED_SECTION_FIELDS = {
         "remoteAreaFee",
     ),
 }
-NUMERIC_TEXT_RE = re.compile(r"^[\s$원]*[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?[\s원]*$")
-
 
 def external_product_id(product: dict[str, Any]) -> str | None:
     for key in ("externalProductId", "productId", "productKey"):
@@ -125,8 +124,7 @@ def canonicalize(value: Any) -> Any:
     if isinstance(value, str):
         text = value.strip()
         if NUMERIC_TEXT_RE.fullmatch(text):
-            normalized = re.sub(r"[\s$원,]", "", text)
-            return float(normalized) if "." in normalized else int(normalized)
+            return parse_number(text)
         return text
     return value
 
