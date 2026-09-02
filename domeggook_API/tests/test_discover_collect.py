@@ -3,7 +3,7 @@ import json
 
 from domeggook_API.config import DetailsConfig, DiscoveryConfig, DomeggookConfig, RequestConfig
 from domeggook_API.workflows.discover_products import discover
-from domeggook_API.persistence.storage import atomic_write_json, load_tracked_products
+from domeggook_API.persistence.storage import atomic_write_json
 
 
 class FakeClient:
@@ -46,6 +46,11 @@ def test_discover_uses_all_market_and_sort_combinations_without_real_api(tmp_pat
     monkeypatch.setenv("POSTGRES_ENABLED", "false")
     api_dir = tmp_path / "domeggook_API"
     api_dir.mkdir()
+    saved_targets = []
+    monkeypatch.setattr(
+        "domeggook_API.workflows.discover_products.save_discovered_product_ids_if_enabled",
+        lambda **kwargs: saved_targets.extend(kwargs["records"]) or 2,
+    )
     client = FakeClient()
     config = _config()
 
@@ -57,11 +62,10 @@ def test_discover_uses_all_market_and_sort_combinations_without_real_api(tmp_pat
     assert result["categoryCount"] == 1
     assert result["discoveredCount"] == 12
     assert result["newProductCount"] == 2
-    tracked = load_tracked_products(api_dir / "data" / "state" / "tracked_products.json")
-    assert set(tracked) == {"100", "200"}
-    assert tracked["100"]["keywords"] == ["bag"]
-    assert tracked["100"]["markets"] == ["dome", "supply"]
-    assert tracked["100"]["reasons"] == ["popular", "ranking", "recent"]
+    assert {record["productId"] for record in saved_targets} == {"100", "200"}
+    assert {record["categoryName"] for record in saved_targets} == {"bag"}
+    assert {record["market"] for record in saved_targets} == {"dome", "supply"}
+    assert {record["reason"] for record in saved_targets} == {"popular", "ranking", "recent"}
 
 
 def test_discover_saves_only_ranked_sorts_with_global_rank(tmp_path, monkeypatch):
@@ -252,8 +256,17 @@ def test_da_discovery_products_remain_detail_targets(tmp_path, monkeypatch):
         ),
         timezone="Asia/Seoul",
     )
+    saved_targets = []
+    monkeypatch.setattr(
+        "domeggook_API.workflows.discover_products.save_discovered_product_ids_if_enabled",
+        lambda **kwargs: saved_targets.extend(kwargs["records"]) or 2,
+    )
 
     discover(tmp_path, config, client=client)
+    monkeypatch.setattr(
+        "domeggook_API.workflows.collect_product_details.discovered_product_ids",
+        lambda **kwargs: sorted({str(record["productId"]) for record in saved_targets}),
+    )
     result = collect_details(tmp_path, config, client=client)
 
     assert result["successCount"] == 2
@@ -264,9 +277,9 @@ def test_collect_details_batches_and_writes_snapshot_without_real_api(tmp_path, 
     monkeypatch.setenv("POSTGRES_ENABLED", "false")
     api_dir = tmp_path / "domeggook_API"
     api_dir.mkdir()
-    atomic_write_json(
-        api_dir / "data" / "state" / "tracked_products.json",
-        {str(value): {"productId": str(value), "active": True} for value in range(205)},
+    monkeypatch.setattr(
+        "domeggook_API.workflows.collect_product_details.discovered_product_ids",
+        lambda **kwargs: [str(value) for value in range(205)],
     )
     client = FakeClient()
     config = _config()
@@ -337,9 +350,9 @@ def test_collect_details_resumes_from_saved_batch_index(tmp_path, monkeypatch):
     monkeypatch.setenv("POSTGRES_ENABLED", "false")
     api_dir = tmp_path / "domeggook_API"
     api_dir.mkdir()
-    atomic_write_json(
-        api_dir / "data" / "state" / "tracked_products.json",
-        {value: {"productId": value, "active": True} for value in ("100", "200", "300")},
+    monkeypatch.setattr(
+        "domeggook_API.workflows.collect_product_details.discovered_product_ids",
+        lambda **kwargs: ["100", "200", "300"],
     )
     config = DomeggookConfig(
         discovery=DiscoveryConfig(markets=("dome",), sorts={"ranking": "rd"}, items_per_keyword=2),

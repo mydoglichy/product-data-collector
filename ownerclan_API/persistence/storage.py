@@ -61,51 +61,6 @@ def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[
     return payload if isinstance(payload, dict) else copy.deepcopy(default or {})
 
 
-def load_tracked_products(path: Path) -> dict[str, dict[str, Any]]:
-    payload = load_json_object(path)
-    return {str(key): _normalize_tracked_product(value) for key, value in payload.items() if isinstance(value, dict)}
-
-
-def save_tracked_products(path: Path, tracked: dict[str, dict[str, Any]]) -> None:
-    atomic_write_json(path, tracked)
-
-
-def merge_discovered_product(
-    tracked: dict[str, dict[str, Any]],
-    product_key: str,
-    keyword: str | None,
-    reason: str,
-    seen_at: str,
-) -> bool:
-    created = product_key not in tracked
-    record = tracked.setdefault(
-        product_key,
-        {
-            "productId": product_key,
-            "productKey": product_key,
-            "keywords": [],
-            "reasons": [],
-            "firstSeenAt": seen_at,
-            "lastSeenAt": seen_at,
-            "active": True,
-        },
-    )
-    record.pop("searchTypes", None)
-    record["productId"] = str(record.get("productId") or product_key)
-    record["productKey"] = str(record.get("productKey") or product_key)
-    if keyword:
-        record["keywords"] = _append_unique(record.get("keywords"), keyword)
-    record["reasons"] = _append_unique(record.get("reasons"), reason)
-    record.setdefault("firstSeenAt", seen_at)
-    record["lastSeenAt"] = seen_at
-    record["active"] = bool(record.get("active", True))
-    return created
-
-
-def active_product_keys(tracked: dict[str, dict[str, Any]]) -> list[str]:
-    return sorted(str(key) for key, record in tracked.items() if record.get("active", True))
-
-
 def load_state(path: Path) -> dict[str, Any]:
     return load_json_object(path)
 
@@ -125,17 +80,4 @@ def chunked(values: list[str], size: int) -> list[list[str]]:
     if size < 1:
         raise ValueError("size must be greater than zero")
     return [values[index : index + size] for index in range(0, len(values), size)]
-
-
-def _append_unique(values: Any, value: str) -> list[str]:
-    result = [str(item) for item in values] if isinstance(values, list) else []
-    if value not in result:
-        result.append(value)
-    return result
-
-
-def _normalize_tracked_product(record: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(record)
-    normalized.pop("searchTypes", None)
-    return normalized
 

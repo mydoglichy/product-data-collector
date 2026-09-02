@@ -5,63 +5,10 @@ import pytest
 
 from domeggook_API.persistence.storage import (
     FileLock,
-    active_product_ids,
     atomic_write_json,
     chunked,
-    load_tracked_products,
-    merge_discovered_product,
+    load_state,
 )
-
-
-def test_discovered_product_ids_are_deduplicated(tmp_path):
-    tracked = {}
-
-    assert merge_discovered_product(tracked, "12345678", "case", "dome", "popular", "2026-08-22T09:00:00+09:00")
-    assert not merge_discovered_product(tracked, "12345678", "case", "dome", "popular", "2026-08-22T10:00:00+09:00")
-
-    assert list(tracked) == ["12345678"]
-    assert tracked["12345678"]["productId"] == "12345678"
-    assert tracked["12345678"]["keywords"] == ["case"]
-
-
-def test_existing_product_metadata_is_merged_without_duplicates():
-    tracked = {
-        "12345678": {
-            "productId": "12345678",
-            "keywords": ["case"],
-            "markets": ["dome"],
-            "reasons": ["popular"],
-            "firstSeenAt": "2026-08-21T09:00:00+09:00",
-            "lastSeenAt": "2026-08-21T09:00:00+09:00",
-            "active": True,
-        }
-    }
-
-    created = merge_discovered_product(
-        tracked,
-        "12345678",
-        "phone case",
-        "supply",
-        "recent",
-        "2026-08-22T09:00:00+09:00",
-    )
-
-    assert not created
-    assert tracked["12345678"]["keywords"] == ["case", "phone case"]
-    assert tracked["12345678"]["markets"] == ["dome", "supply"]
-    assert tracked["12345678"]["reasons"] == ["popular", "recent"]
-    assert tracked["12345678"]["firstSeenAt"] == "2026-08-21T09:00:00+09:00"
-    assert tracked["12345678"]["lastSeenAt"] == "2026-08-22T09:00:00+09:00"
-
-
-def test_active_product_ids_skip_inactive_and_sort_as_strings():
-    tracked = {
-        "2": {"active": True},
-        "10": {"active": True},
-        "1": {"active": False},
-    }
-
-    assert active_product_ids(tracked) == ["10", "2"]
 
 
 def test_chunked_splits_detail_batches_by_100():
@@ -75,12 +22,12 @@ def test_chunked_splits_detail_batches_by_100():
 
 
 def test_atomic_write_json_replaces_valid_file(tmp_path):
-    path = tmp_path / "tracked_products.json"
+    path = tmp_path / "state.json"
 
     atomic_write_json(path, {"1": {"productId": "1"}})
     atomic_write_json(path, {"2": {"productId": "2"}})
 
-    assert load_tracked_products(path) == {"2": {"productId": "2"}}
+    assert load_state(path) == {"2": {"productId": "2"}}
     assert not list(tmp_path.glob("*.tmp"))
 
 
