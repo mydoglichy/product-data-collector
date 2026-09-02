@@ -16,12 +16,19 @@ from ..persistence.storage import FileLock
 LOGGER = logging.getLogger("domeggook_API")
 
 
-def run(project_root: Path, config_path: Path, *, limit: int | None = None, dry_run: bool = False) -> dict[str, dict[str, int]]:
+def run(
+    project_root: Path,
+    config_path: Path,
+    *,
+    limit: int | None = None,
+    page_limit: int | None = None,
+    dry_run: bool = False,
+) -> dict[str, dict[str, int]]:
     config = load_config(config_path)
     api_keys = load_api_keys(project_root)
     client = create_domeggook_client(api_keys, config)
     with FileLock(project_root / "domeggook_API" / "data" / "logs" / "collector.lock"):
-        discovery = discover(project_root, config, keyword_limit=limit, dry_run=dry_run, client=client)
+        discovery = discover(project_root, config, keyword_limit=limit, page_limit=page_limit, dry_run=dry_run, client=client)
         details = collect_details(project_root, config, product_limit=limit, dry_run=dry_run, client=client)
     return {"discovery": discovery, "details": details}
 
@@ -30,13 +37,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run Domeggook/Domeme discovery and daily detail snapshot collection.")
     parser.add_argument("--config", default=None)
     parser.add_argument("--limit", type=int, default=None, help="Limit keywords and active product ids for a small real API run.")
+    parser.add_argument("--page-limit", type=int, default=None, help="Limit discovery pages for a small real API run.")
     parser.add_argument("--dry-run", action="store_true", help="Call API but do not write data files.")
     args = parser.parse_args(argv)
 
     project_root = find_project_root(Path.cwd())
     configure_logging(project_root / "domeggook_API" / "data" / "logs")
     config_path = Path(args.config) if args.config else project_root / "domeggook_API" / "config" / "config.yaml"
-    result = run(project_root, config_path, limit=args.limit, dry_run=args.dry_run)
+    result = run(project_root, config_path, limit=args.limit, page_limit=args.page_limit, dry_run=args.dry_run)
     print("Domeggook collection summary")
     print(f"discovery={result['discovery']}")
     print(f"details={result['details']}")

@@ -94,6 +94,21 @@ def test_connection(project_root: Path | None = None) -> dict[str, str]:
     return {"database": str(row.get("database") or ""), "version": str(row.get("version") or "")}
 
 
+def product_counts(project_root: Path | None = None) -> dict[str, int]:
+    config = load_postgres_config(project_root)
+    with connect(config) as connection:
+        init_schema(connection)
+        rows = connection.execute(
+            """
+            SELECT platform, count(*) AS count
+            FROM products
+            GROUP BY platform
+            ORDER BY platform
+            """
+        ).fetchall()
+    return {str(row["platform"]): int(row["count"]) for row in rows}
+
+
 def init_schema(connection: Connection[Any]) -> None:
     statements = (
         """

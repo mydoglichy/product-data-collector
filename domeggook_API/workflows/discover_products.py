@@ -24,6 +24,7 @@ def discover(
     config: DomeggookConfig,
     *,
     keyword_limit: int | None = None,
+    page_limit: int | None = None,
     dry_run: bool = False,
     client: DomeggookClient | None = None,
 ) -> dict[str, int]:
@@ -45,6 +46,8 @@ def discover(
     new_products = 0
     failures = 0
     stopped_on_failure = False
+    page_count = 0
+    stopped_on_limit = False
 
     positions = _discovery_positions(categories, config)
     start_index = _discovery_start_index(positions, state)
@@ -64,6 +67,7 @@ def discover(
                 )
                 items = parse_list_items(payload)
                 header = parse_list_header(payload)
+                page_count += 1
             except DomeggookApiError as exc:
                 failures += 1
                 stopped_on_failure = True
@@ -136,16 +140,22 @@ def discover(
                 if not dry_run:
                     _save_next_discovery_state(state_path, collected_at, positions, position_index, None)
                 break
+            if page_limit is not None and page_count >= page_limit:
+                stopped_on_limit = True
+                if not dry_run:
+                    _save_next_discovery_state(state_path, collected_at, positions, position_index, page + 1)
+                break
             page += 1
             if not dry_run:
                 _save_next_discovery_state(state_path, collected_at, positions, position_index, page)
-        if stopped_on_failure:
+        if stopped_on_failure or stopped_on_limit:
             break
-    if not dry_run and not stopped_on_failure:
+    if not dry_run and not stopped_on_failure and not stopped_on_limit:
         clear_state(state_path)
 
     return {
         "categoryCount": len(categories),
+        "pageCount": page_count,
         "discoveredCount": discovered,
         "newProductCount": new_products,
         "trackedCount": len(tracked),
@@ -247,13 +257,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Discover Domeggook/Domeme product ids from category searches.")
     parser.add_argument("--config", default=None)
     parser.add_argument("--limit", type=int, default=None, help="Limit categories for a small real API run.")
+    parser.add_argument("--page-limit", type=int, default=None, help="Limit list pages for a small real API run.")
     parser.add_argument("--dry-run", action="store_true", help="Call API but do not write data files.")
     args = parser.parse_args(argv)
 
     project_root = find_project_root(Path.cwd())
     configure_logging(project_root / "domeggook_API" / "data" / "logs")
     config = load_config(Path(args.config) if args.config else project_root / "domeggook_API" / "config" / "config.yaml")
-    result = discover(project_root, config, keyword_limit=args.limit, dry_run=args.dry_run)
+    result = discover(project_root, config, keyword_limit=args.limit, page_limit=args.page_limit, dry_run=args.dry_run)
     print(result)
     return 1 if result["failureCount"] and not result["discoveredCount"] else 0
 

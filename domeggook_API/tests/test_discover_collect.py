@@ -1,4 +1,6 @@
 ﻿from domeggook_API.workflows.collect_product_details import collect_details
+import json
+
 from domeggook_API.config import DetailsConfig, DiscoveryConfig, DomeggookConfig, RequestConfig
 from domeggook_API.workflows.discover_products import discover
 from domeggook_API.persistence.storage import atomic_write_json, load_tracked_products
@@ -193,6 +195,44 @@ def test_discover_walks_all_list_pages_until_short_page(tmp_path, monkeypatch):
     assert [request.page for request in client.list_requests] == [1, 2, 3]
     assert result["discoveredCount"] == 5
     assert [record["rank"] for record in saved_records] == [1, 2, 3, 4, 5]
+
+
+def test_discover_page_limit_saves_resume_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTGRES_ENABLED", "false")
+    api_dir = tmp_path / "domeggook_API"
+    api_dir.mkdir()
+    monkeypatch.setattr("domeggook_API.workflows.discover_products.save_search_ranks_if_enabled", lambda **kwargs: 0)
+
+    class MultiPageClient(FakeClient):
+        def get_item_list(self, request):
+            self.list_requests.append(request)
+            return {
+                "domeggook": {
+                    "header": {"currentPage": request.page, "itemsPerPage": 2, "sort": request.sort},
+                    "list": {"item": [{"no": f"{request.page}-1"}, {"no": f"{request.page}-2"}]},
+                }
+            }
+
+    config = DomeggookConfig(
+        discovery=DiscoveryConfig(markets=("dome",), sorts={"ranking": "rd"}, items_per_keyword=2),
+        details=DetailsConfig(batch_size=100, raw_sample_limit=20),
+        request=RequestConfig(
+            max_requests_per_minute=120,
+            max_requests_per_hour=9000,
+            max_requests_per_day=14000,
+            timeout_seconds=20,
+            max_retries=3,
+        ),
+        timezone="Asia/Seoul",
+    )
+    client = MultiPageClient()
+
+    result = discover(tmp_path, config, page_limit=1, client=client)
+
+    assert result["pageCount"] == 1
+    assert [request.page for request in client.list_requests] == [1]
+    saved_state = json.loads((api_dir / "data" / "state" / "discovery-state.json").read_text(encoding="utf-8"))
+    assert saved_state["nextPage"] == 2
 
 
 def test_da_discovery_products_remain_detail_targets(tmp_path, monkeypatch):

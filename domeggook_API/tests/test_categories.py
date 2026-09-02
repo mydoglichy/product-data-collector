@@ -22,6 +22,30 @@ def test_parse_searchable_categories_walks_child_tree_and_skips_large_categories
     assert categories[0].depth == 3
 
 
+def test_parse_searchable_categories_accepts_numeric_keyed_items():
+    categories = parse_searchable_categories(
+        {
+            "domeggook": {
+                "items": {
+                    "1": {
+                        "code": "01_00_00_00_00",
+                        "name": "large",
+                        "child": {
+                            "10": {
+                                "code": "01_01_00_00_00",
+                                "name": "leaf",
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    )
+
+    assert [category.code for category in categories] == ["01_01_00_00_00"]
+    assert categories[0].path == ("large", "leaf")
+
+
 def test_load_or_refresh_categories_uses_fresh_cache(tmp_path):
     path = tmp_path / "categories.json"
     path.write_text(
