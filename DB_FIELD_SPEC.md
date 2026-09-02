@@ -12,6 +12,7 @@
 | `product_name` | `TEXT` | Yes | 최신 상품명 |
 | `product_url` | `TEXT` | Yes | 최신 상품 URL |
 | `image_url` | `TEXT` | Yes | 최신 대표 이미지 URL |
+| `backup_image_url` | `TEXT` | Yes | 최신 예비 이미지 URL |
 | `current_payload` | `JSONB` | No | raw/추적 query 등 volatile 값을 제거한 최신 정규화 payload |
 | `comparable_payload` | `JSONB` | No | 변경 감지 대상 payload |
 | `comparable_fingerprint` | `CHAR(64)` | No | `comparable_payload` SHA-256 |

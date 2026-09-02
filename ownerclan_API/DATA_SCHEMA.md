@@ -8,6 +8,8 @@
 | --- | --- |
 | `products.platform` | `ownerclan` |
 | `products.external_product_id` | `productId` 또는 `productKey` |
+| `products.image_url` | `images[0]` 또는 이미지 후보 첫 번째 URL |
+| `products.backup_image_url` | `images[1]` 또는 이미지 후보 두 번째 URL |
 | `products.current_payload` | 최신 정규화 상품 payload |
 | `products.comparable_payload` | `prices`, `inventory`, `shipping`, `options`, `status`, `sourceStatus` |
 | `product_prices.market` | `ownerclan` |

@@ -23,6 +23,7 @@ category {
 }
 shippingFee
 shippingType
+images
 status
 options {
   optionAttributes {
@@ -60,6 +61,7 @@ category {
 }
 shippingFee
 shippingType
+images
 status
 options {
   optionAttributes {

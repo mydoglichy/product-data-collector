@@ -24,12 +24,14 @@ def test_normalize_current_product_removes_raw_and_tracking_queries() -> None:
             "raw": {"ignored": True},
             "productUrl": "https://SHOP.example/p?item=1&utm_campaign=x&gclid=y",
             "imageUrl": "https://CDN.example/a.jpg?v=1",
+            "backupImageUrl": "https://CDN.example/b.jpg?v=1",
         }
     )
 
     assert "raw" not in current
     assert current["productUrl"] == "https://shop.example/p?item=1"
     assert current["imageUrl"] == "https://cdn.example/a.jpg"
+    assert current["backupImageUrl"] == "https://cdn.example/b.jpg"
 
 
 def test_comparable_state_ignores_volatile_display_fields() -> None:

@@ -40,6 +40,8 @@ def test_snapshot_row_normalizes_product_for_postgres() -> None:
         {
             "productId": "123",
             "productName": "Sample",
+            "imageUrl": "https://img.example/a.jpg?size=100",
+            "backupImageUrl": "https://img.example/b.jpg?size=100",
             "productPrice": 12000,
             "raw": {"ignored": True},
         },
@@ -48,6 +50,11 @@ def test_snapshot_row_normalizes_product_for_postgres() -> None:
     assert row is not None
     assert row["platform"] == "coupang"
     assert row["external_product_id"] == "123"
+    assert row["image_url"] == "https://img.example/a.jpg"
+    assert row["backup_image_url"] == "https://img.example/b.jpg"
+    assert row["current_payload"]["imageUrl"] == "https://img.example/a.jpg"
+    assert row["current_payload"]["backupImageUrl"] == "https://img.example/b.jpg"
+    assert "images" not in row["current_payload"]
     assert "raw" not in row["current_payload"]
     assert row["primary_price"] == 12000
 

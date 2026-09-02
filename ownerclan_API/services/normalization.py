@@ -36,6 +36,7 @@ def normalize_item(item: dict[str, Any], collected_at: str) -> dict[str, Any]:
     source_status = _string(item.get("status"))
     category = item.get("category") if isinstance(item.get("category"), dict) else {}
     metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else item.get("metadata")
+    image_urls = _image_urls(item.get("images"), item.get("imageUrl"), item.get("productImage"), item.get("image"))
     raw = compact_raw_item_for_snapshot(item)
     product = {
         "source": "ownerclan",
@@ -94,6 +95,10 @@ def normalize_item(item: dict[str, Any], collected_at: str) -> dict[str, Any]:
         },
         "raw": raw,
     }
+    if image_urls:
+        product["imageUrl"] = image_urls[0]
+    if len(image_urls) > 1:
+        product["backupImageUrl"] = image_urls[1]
     return product
 
 
@@ -177,6 +182,33 @@ def normalize_status(value: str | None) -> str | None:
     if value is None:
         return None
     return STATUS_MAP.get(value, value)
+
+
+def _image_urls(*values: Any) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for url in _iter_image_urls(value):
+            if url not in seen:
+                seen.add(url)
+                urls.append(url)
+    return urls
+
+
+def _iter_image_urls(value: Any):
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            yield text
+        return
+    if isinstance(value, list):
+        for item in value:
+            yield from _iter_image_urls(item)
+        return
+    if isinstance(value, dict):
+        for key in ("original", "url", "src", "imageUrl", "productImage", "large", "medium", "small"):
+            if key in value:
+                yield from _iter_image_urls(value.get(key))
 
 
 def _string(value: Any) -> str | None:
