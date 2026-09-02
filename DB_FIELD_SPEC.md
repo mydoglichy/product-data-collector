@@ -46,6 +46,11 @@ Unique: `(product_id, collected_at, market, price_type)`
 
 Unique: `(product_id, collected_at)`
 
+저장 규칙:
+
+- `stock_quantity`와 payload에 의미 있는 원본 값이 모두 없으면 row를 저장하지 않는다.
+- `stock_quantity=0`은 실제 재고 0으로 보고 저장한다.
+
 ## `product_shipping_fees`
 
 | 컬럼 | 타입 | Null | 설명 |
@@ -62,6 +67,8 @@ Unique: `(product_id, collected_at, market)`
 
 저장 규칙:
 
+- 배송비, 배송비 타입, 무료배송 여부, payload 원본 값이 모두 없으면 row를 저장하지 않는다.
+- `fee=0`과 `is_free_shipping=False`는 의미 있는 값으로 보고 저장한다.
 - 도매꾹 `deli.dome.fee/tbl/type`은 `market='dome'` row에 저장한다.
 - 도매매 `deli.supply.fee/tbl/type`은 `market='supply'` row에 저장한다.
 - 도매매 배송비가 없으면 도매꾹 배송비로 임의 fallback row를 만들지 않는다.

@@ -742,6 +742,8 @@ def _insert_price(connection: Connection[Any], product_id: int, row: dict[str, A
 
 
 def _insert_inventory(connection: Connection[Any], product_id: int, row: dict[str, Any]) -> None:
+    if not _has_inventory_snapshot(row):
+        return
     connection.execute(
         """
         INSERT INTO product_inventory (product_id, collected_at, stock_quantity, payload)
@@ -756,6 +758,8 @@ def _insert_inventory(connection: Connection[Any], product_id: int, row: dict[st
 
 def _insert_shipping(connection: Connection[Any], product_id: int, row: dict[str, Any]) -> None:
     for shipping in row["shipping_rows"]:
+        if not _has_shipping_snapshot(shipping, row):
+            continue
         connection.execute(
             """
             INSERT INTO product_shipping_fees (product_id, collected_at, market, fee, shipping_type, is_free_shipping, payload)
@@ -776,6 +780,47 @@ def _insert_shipping(connection: Connection[Any], product_id: int, row: dict[str
                 Jsonb(_json_safe(shipping.get("payload", row["shipping_payload"]))),
             ),
         )
+
+
+def _has_inventory_snapshot(row: dict[str, Any]) -> bool:
+    if row["stock_quantity"] is not None:
+        return True
+    return _has_meaningful_payload_value(row["inventory_payload"], ignored_keys={"stockQuantitySource"})
+
+
+def _has_shipping_snapshot(shipping: dict[str, Any], row: dict[str, Any]) -> bool:
+    if shipping["fee"] is not None or row["is_free_shipping"] is not None:
+        return True
+    if shipping["shipping_type"] not in (None, "", "unknown"):
+        return True
+    payload = shipping.get("payload", row["shipping_payload"])
+    return _has_meaningful_payload_value(
+        payload,
+        ignored_keys={
+            "market",
+            "shipping_fee",
+            "shipping_type",
+            "shipping_payment",
+            "shipping_fee_raw",
+            "shipping_fee_type_raw",
+            "requires_quantity_calculation",
+            "sourceFields",
+            "source_fields",
+        },
+    )
+
+
+def _has_meaningful_payload_value(value: Any, *, ignored_keys: set[str] | None = None) -> bool:
+    ignored = ignored_keys or set()
+    if isinstance(value, dict):
+        return any(
+            _has_meaningful_payload_value(child, ignored_keys=ignored)
+            for key, child in value.items()
+            if str(key) not in ignored
+        )
+    if isinstance(value, list):
+        return any(_has_meaningful_payload_value(child, ignored_keys=ignored) for child in value)
+    return _has_value(value)
 
 
 def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> dict[str, Any] | None:
