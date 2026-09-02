@@ -1,0 +1,15 @@
+.git
+.idea
+.pytest_cache
+__pycache__
+*.py[cod]
+.venv
+venv
+
+.env
+logs/
+
+tests/
+coupang_API/data/
+domeggook_API/data/
+ownerclan_API/data/
