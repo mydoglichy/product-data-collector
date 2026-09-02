@@ -158,6 +158,8 @@ def _as_items(value: Any) -> list[Any]:
     if isinstance(value, dict):
         if "item" in value:
             return _as_items(value["item"])
+        if not {"code", "name", "child"} & set(value):
+            return list(value.values())
         return [value]
     return []
 

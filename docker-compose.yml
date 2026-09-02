@@ -25,11 +25,18 @@ services:
     env_file:
       - .env
     environment:
+      POSTGRES_ENABLED: "true"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DOMEGGOOK_API_KEY_1: ${DOMEGGOOK_API_KEY_1:?DOMEGGOOK_API_KEY_1 is required}
+      OWNERCLAN_USERNAME: ${OWNERCLAN_USERNAME:?OWNERCLAN_USERNAME is required}
+      OWNERCLAN_PASSWORD: ${OWNERCLAN_PASSWORD:?OWNERCLAN_PASSWORD is required}
+      COLLECTOR_LIMIT: ${COLLECTOR_LIMIT:-}
+      COLLECTOR_DRY_RUN: ${COLLECTOR_DRY_RUN:-false}
+      OWNERCLAN_REFRESH_CATEGORIES: ${OWNERCLAN_REFRESH_CATEGORIES:-true}
     volumes:
       - .:/app
     depends_on:
@@ -38,7 +45,7 @@ services:
     command: >
       sh -c "pip install --no-cache-dir -r requirements.txt
       && python scripts/test_postgres_connection.py
-      && tail -f /dev/null"
+      && python scripts/run_collectors.py"
 
 volumes:
   postgres_data:

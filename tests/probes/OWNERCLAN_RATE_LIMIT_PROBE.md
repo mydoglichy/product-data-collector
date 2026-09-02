@@ -36,5 +36,5 @@
 ## 재테스트 명령
 
 ```powershell
-python scripts\ownerclan_rate_probe.py --rpm 180 --duration 60
+python tests\probes\ownerclan_rate_probe.py --rpm 180 --duration 60
 ```

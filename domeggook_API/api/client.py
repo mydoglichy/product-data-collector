@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 
 import requests
 
+from collector_metrics import ApiMetrics
 from ..config import DomeggookConfig
 from ..api.rate_limiter import RateLimitWindow, RateLimiter
 
@@ -68,6 +69,7 @@ class DomeggookClient:
         self._timeout = timeout_seconds
         self._max_retries = max_retries
         self._session = session or requests.Session()
+        self._metrics = ApiMetrics("domeggook", LOGGER)
 
     def get_item_list(self, request: ListRequest) -> dict[str, Any]:
         if not request.keyword and not request.category_code:
@@ -114,6 +116,7 @@ class DomeggookClient:
         safe_params = {key: value for key, value in params.items() if key != "aid"}
         credential = self._next_credential()
         request_params = {**params, "aid": credential.api_key}
+        operation = str(params.get("mode") or "get")
 
         for attempt in range(1, attempts + 1):
             credential.rate_limiter.wait()
@@ -121,6 +124,7 @@ class DomeggookClient:
             try:
                 response = self._session.get(url, timeout=self._timeout)
             except (requests.Timeout, requests.ConnectionError) as exc:
+                self._metrics.record_failure(operation=operation, error=exc.__class__.__name__, timed_out=isinstance(exc, requests.Timeout))
                 LOGGER.warning(
                     "network failure key=%s params=%s attempt=%d error=%s",
                     credential.label,
@@ -134,12 +138,14 @@ class DomeggookClient:
                 continue
 
             if response.status_code == 429 and attempt < attempts:
+                self._metrics.record_failure(operation=operation, status_code=response.status_code, error="rate_limited")
                 retry_after = _retry_after_seconds(response.headers.get("Retry-After"))
                 LOGGER.warning("rate limited key=%s params=%s attempt=%d status=429", credential.label, safe_params, attempt)
                 time.sleep(retry_after if retry_after is not None else min(2 ** (attempt - 1), 30))
                 continue
 
             if 500 <= response.status_code < 600 and attempt < attempts:
+                self._metrics.record_failure(operation=operation, status_code=response.status_code, error="server_error")
                 LOGGER.warning(
                     "server error key=%s params=%s attempt=%d status=%d",
                     credential.label,
@@ -151,13 +157,20 @@ class DomeggookClient:
                 continue
 
             if response.status_code >= 400:
+                self._metrics.record_failure(operation=operation, status_code=response.status_code, error="http_error")
                 raise DomeggookHttpError(response.status_code, _safe_response_message(response))
 
             try:
                 payload = response.json()
             except ValueError as exc:
+                self._metrics.record_failure(operation=operation, status_code=response.status_code, error="invalid_json")
                 raise DomeggookApiError(f"invalid JSON response: HTTP {response.status_code}") from exc
-            _raise_for_api_error(payload)
+            try:
+                _raise_for_api_error(payload)
+            except DomeggookApiError as exc:
+                self._metrics.record_failure(operation=operation, status_code=response.status_code, error=exc.__class__.__name__)
+                raise
+            self._metrics.record_success(operation=operation, status_code=response.status_code)
             return payload
 
         raise DomeggookApiError("request failed after retries")
