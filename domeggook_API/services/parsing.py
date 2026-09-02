@@ -80,6 +80,14 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
     channel = _first_dict(item, ("channel",))
     dome_fee_raw = _coalesce(_get(deli_dome, "fee", "tbl"), _get(dome, "deliveryFee", "shipFee"))
     supply_fee_raw = _coalesce(_get(deli_supply, "fee", "tbl"), _get(supply, "deliveryFee", "shipFee"))
+    image_urls = _image_urls(
+        item.get("thumb"),
+        item.get("image"),
+        item.get("imageInfo"),
+        item.get("img"),
+        item.get("imageUrl"),
+        item.get("productImage"),
+    )
 
     product_id = parse_product_id(item)
     product = {
@@ -156,6 +164,10 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
             "name": _get(category_current, "name") or _get(category, "name", "categoryName", "cateName"),
         },
     }
+    if image_urls:
+        product["imageUrl"] = image_urls[0]
+    if len(image_urls) > 1:
+        product["backupImageUrl"] = image_urls[1]
     if include_raw:
         product["raw"] = compact_raw_item_for_snapshot(item)
     return product
@@ -222,6 +234,33 @@ def _coalesce(*values: Any) -> Any:
         if value is not None:
             return value
     return None
+
+
+def _image_urls(*values: Any) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for url in _iter_image_urls(value):
+            if url not in seen:
+                seen.add(url)
+                urls.append(url)
+    return urls
+
+
+def _iter_image_urls(value: Any):
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            yield text
+        return
+    if isinstance(value, list):
+        for item in value:
+            yield from _iter_image_urls(item)
+        return
+    if isinstance(value, dict):
+        for key in ("original", "url", "src", "imageUrl", "productImage", "large", "medium", "small"):
+            if key in value:
+                yield from _iter_image_urls(value.get(key))
 
 
 def _number(value: Any) -> int | float | Any:

@@ -103,6 +103,7 @@ def init_schema(connection: Connection[Any]) -> None:
             product_name TEXT NULL,
             product_url TEXT NULL,
             image_url TEXT NULL,
+            backup_image_url TEXT NULL,
             current_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
             comparable_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
             comparable_fingerprint CHAR(64) NOT NULL,
@@ -183,6 +184,7 @@ def init_schema(connection: Connection[Any]) -> None:
                 UNIQUE (platform, collected_at, keyword, category_code, market, sort, external_product_id, rank)
         )
         """,
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS backup_image_url TEXT NULL",
         "ALTER TABLE product_search_ranks ADD COLUMN IF NOT EXISTS keyword TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE product_search_ranks ADD COLUMN IF NOT EXISTS category_code TEXT NOT NULL DEFAULT ''",
         "UPDATE product_search_ranks SET keyword = '' WHERE keyword IS NULL",
@@ -650,6 +652,7 @@ def _save_snapshot(connection: Connection[Any], row: dict[str, Any]) -> None:
             product_name,
             product_url,
             image_url,
+            backup_image_url,
             current_payload,
             comparable_payload,
             comparable_fingerprint,
@@ -657,11 +660,12 @@ def _save_snapshot(connection: Connection[Any], row: dict[str, Any]) -> None:
             last_collected_at,
             updated_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
         ON CONFLICT (platform, external_product_id) DO UPDATE SET
             product_name = EXCLUDED.product_name,
             product_url = EXCLUDED.product_url,
             image_url = EXCLUDED.image_url,
+            backup_image_url = EXCLUDED.backup_image_url,
             current_payload = EXCLUDED.current_payload,
             comparable_payload = EXCLUDED.comparable_payload,
             comparable_fingerprint = EXCLUDED.comparable_fingerprint,
@@ -675,6 +679,7 @@ def _save_snapshot(connection: Connection[Any], row: dict[str, Any]) -> None:
             row["product_name"],
             row["product_url"],
             row["image_url"],
+            row["backup_image_url"],
             Jsonb(row["current_payload"]),
             Jsonb(row["comparable_payload"]),
             row["comparable_fingerprint"],
@@ -790,6 +795,7 @@ def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> 
         "product_name": _first_text(current, "productName", "name", "title"),
         "product_url": _first_text(current, "productUrl", "affiliateUrl", "url"),
         "image_url": _first_text(current, "imageUrl", "productImage"),
+        "backup_image_url": _first_text(current, "backupImageUrl"),
         "current_payload": current,
         "comparable_payload": comparable,
         "comparable_fingerprint": fingerprint_state(comparable),

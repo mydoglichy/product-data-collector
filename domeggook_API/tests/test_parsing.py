@@ -67,6 +67,7 @@ def test_real_detail_nested_shape_is_parsed():
                     "seller": {"id": "seller1", "nick": "판매자", "type": "사업자", "rank": "A", "good": "Y"},
                     "category": {"current": {"code": "1010", "name": "잡화"}},
                     "thumb": {"original": "https://image", "lastUpdate": "2026-08-22"},
+                    "imageInfo": {"url": "https://backup-image"},
                 }
             ]
         }
@@ -90,6 +91,9 @@ def test_real_detail_nested_shape_is_parsed():
     assert product["markets"]["supplyOnSale"] == "Y"
     assert product["seller"]["nickname"] == "판매자"
     assert product["category"]["code"] == "1010"
+    assert product["imageUrl"] == "https://image"
+    assert product["backupImageUrl"] == "https://backup-image"
+    assert "images" not in product
     assert "keywords" not in product
     assert "image" not in product
 

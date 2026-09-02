@@ -8,6 +8,8 @@
 | --- | --- |
 | `products.platform` | `domeggook` |
 | `products.external_product_id` | `productId` |
+| `products.image_url` | `thumb.original` 등 이미지 후보 첫 번째 URL |
+| `products.backup_image_url` | `image`, `imageInfo`, `img`, `imageUrl`, `productImage` 등 이미지 후보 두 번째 URL |
 | `product_prices.market='dome'` | `prices.domeCurrentSupplyPrice` |
 | `product_prices.market='supply'` | `prices.supplyCurrentSupplyPrice` |
 | `product_prices.market='retail'` | `minimumRetailPrice`, `recommendedRetailPrice` |

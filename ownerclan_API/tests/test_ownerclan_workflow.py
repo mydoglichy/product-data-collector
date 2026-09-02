@@ -394,9 +394,9 @@ def test_options_stock_status_normalization_and_source_specific_preserved():
     assert product["sourceSpecific"]["vendorKey"] == "V1"
 
 
-def test_metadata_content_keywords_and_images_are_not_saved():
+def test_metadata_content_keywords_are_not_saved_and_images_are_normalized():
     item = _item("W10")
-    item["images"] = ["https://example.com/a.jpg", "https://example.com/a.jpg"]
+    item["images"] = ["https://example.com/a.jpg", "https://example.com/a.jpg", {"url": "https://example.com/b.jpg"}]
     item["metadata"] = {
         "vendorKey": "V1",
         "productNotificationInformation": {
@@ -416,10 +416,12 @@ def test_metadata_content_keywords_and_images_are_not_saved():
 
     product = normalize_item(item, "2026-08-24T00:00:00+09:00")
 
+    assert product["imageUrl"] == "https://example.com/a.jpg"
+    assert product["backupImageUrl"] == "https://example.com/b.jpg"
+    assert "images" not in product
     assert "metadata" not in product["sourceSpecific"]
     assert "content" not in product["sourceSpecific"]
     assert "keywords" not in product
-    assert "image" not in product
     assert "metadata" not in product["raw"]
     assert "content" not in product["raw"]
     assert "searchKeywords" not in product["raw"]

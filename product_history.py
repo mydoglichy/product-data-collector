@@ -20,6 +20,7 @@ VOLATILE_KEYS = {
     "affiliateUrl",
     "productImage",
     "imageUrl",
+    "backupImageUrl",
     "images",
     "registeredAt",
     "updatedAt",
@@ -92,7 +93,7 @@ def external_product_id(product: dict[str, Any]) -> str | None:
 def normalize_current_product(product: dict[str, Any]) -> dict[str, Any]:
     result = copy.deepcopy(product)
     result.pop("raw", None)
-    for key in ("productUrl", "affiliateUrl", "imageUrl", "productImage"):
+    for key in ("productUrl", "affiliateUrl", "imageUrl", "backupImageUrl", "productImage"):
         if key in result:
             result[key] = normalize_url(result.get(key), strip_all_query=key.lower().find("image") >= 0)
     if "images" in result and isinstance(result["images"], list):

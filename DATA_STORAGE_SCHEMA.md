@@ -9,6 +9,13 @@
 3. raw 샘플은 `save_product_raw_samples_if_enabled()`가 `product_raw_samples`에 저장한다.
 4. 순위 의미가 있는 discovery/search 결과만 `save_search_ranks_if_enabled()`가 `product_search_ranks`에 저장한다.
 
+## `products` 이미지 URL
+
+- `image_url`: 정규화 payload의 `imageUrl`에서 가져온 대표 이미지 URL
+- `backup_image_url`: 정규화 payload의 `backupImageUrl`에서 가져온 예비 이미지 URL
+- 오너클랜과 도매꾹/도매매는 API가 여러 이미지 후보를 주더라도 대표 1개와 예비 1개만 정규화 payload와 DB 컬럼에 저장한다.
+- 이미지 URL은 가격/재고/배송비 변경 감지 대상이 아니므로 `comparable_payload`에는 포함하지 않는다.
+
 ## `product_search_ranks`
 
 - 도매꾹/도매매 `da`는 공식 의미가 상품정보 등록/수정일 최근순인 최근등록순이므로 랭킹 데이터로 저장하지 않는다.
