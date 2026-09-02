@@ -147,23 +147,16 @@ def load_keywords(path: Path) -> list[str]:
 
 def load_api_keys(project_root: Path) -> list[str]:
     load_dotenv(project_root / ".env", override=False)
-    numbered_keys = (os.getenv("DOMEGGOOK_API_KEY_1"), os.getenv("DOMEGGOOK_API_KEY_2"))
-    if any(numbered_keys):
-        missing = [
-            name
-            for name, value in (("DOMEGGOOK_API_KEY_1", numbered_keys[0]), ("DOMEGGOOK_API_KEY_2", numbered_keys[1]))
-            if not value
-        ]
-        if missing:
-            raise RuntimeError(f"missing required environment variable(s): {', '.join(missing)}")
-        return [key for key in numbered_keys if key is not None]
+    primary_api_key = os.getenv("DOMEGGOOK_API_KEY_1")
+    if primary_api_key:
+        return [primary_api_key]
 
     legacy_api_key = os.getenv("DOMEGGOOK_API_KEY")
     if legacy_api_key:
         return [legacy_api_key]
 
     raise RuntimeError(
-        "missing required environment variable: DOMEGGOOK_API_KEY_1 and DOMEGGOOK_API_KEY_2 "
+        "missing required environment variable: DOMEGGOOK_API_KEY_1 "
         "(legacy fallback: DOMEGGOOK_API_KEY)"
     )
 

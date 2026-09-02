@@ -60,18 +60,27 @@ def test_config_rejects_daily_rate_limit_boundary(tmp_path):
         load_config(path)
 
 
-def test_load_api_keys_prefers_numbered_environment_variables(tmp_path, monkeypatch):
+def test_load_api_keys_uses_primary_numbered_environment_variable(tmp_path, monkeypatch):
     monkeypatch.setenv("DOMEGGOOK_API_KEY_1", "key-1")
     monkeypatch.setenv("DOMEGGOOK_API_KEY_2", "key-2")
     monkeypatch.setenv("DOMEGGOOK_API_KEY", "legacy-key")
 
-    assert load_api_keys(tmp_path) == ["key-1", "key-2"]
+    assert load_api_keys(tmp_path) == ["key-1"]
 
 
-def test_load_api_keys_requires_both_numbered_keys(tmp_path, monkeypatch):
-    monkeypatch.setenv("DOMEGGOOK_API_KEY_1", "key-1")
+def test_load_api_keys_uses_legacy_environment_variable(tmp_path, monkeypatch):
+    monkeypatch.delenv("DOMEGGOOK_API_KEY_1", raising=False)
     monkeypatch.delenv("DOMEGGOOK_API_KEY_2", raising=False)
+    monkeypatch.setenv("DOMEGGOOK_API_KEY", "legacy-key")
 
-    with pytest.raises(RuntimeError, match="DOMEGGOOK_API_KEY_2"):
+    assert load_api_keys(tmp_path) == ["legacy-key"]
+
+
+def test_load_api_keys_requires_primary_or_legacy_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("DOMEGGOOK_API_KEY_1", raising=False)
+    monkeypatch.delenv("DOMEGGOOK_API_KEY_2", raising=False)
+    monkeypatch.delenv("DOMEGGOOK_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="DOMEGGOOK_API_KEY_1"):
         load_api_keys(tmp_path)
 
