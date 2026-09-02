@@ -16,6 +16,13 @@
 - 오너클랜과 도매꾹/도매매는 API가 여러 이미지 후보를 주더라도 대표 1개와 예비 1개만 정규화 payload와 DB 컬럼에 저장한다.
 - 이미지 URL은 가격/재고/배송비 변경 감지 대상이 아니므로 `comparable_payload`에는 포함하지 않는다.
 
+## `product_change_history`
+
+- `products`는 상품별 최신 상태만 유지하고, `product_change_history`는 `comparable_payload`의 fingerprint가 바뀐 수집 시점을 기록한다.
+- 신규 상품은 변경 전 fingerprint/payload 없이 최초 상태를 저장한다.
+- 기존 상품은 `before_fingerprint`, `after_fingerprint`, `before_payload`, `after_payload`를 함께 저장해 상품 기본 정보 변경 이력을 추적한다.
+- 가격, 재고, 배송비의 시점별 변화는 각각 `product_prices`, `product_inventory`, `product_shipping_fees` snapshot 테이블에서 관리한다.
+
 ## `product_search_ranks`
 
 - 도매꾹/도매매 `da`는 공식 의미가 상품정보 등록/수정일 최근순인 최근등록순이므로 랭킹 데이터로 저장하지 않는다.

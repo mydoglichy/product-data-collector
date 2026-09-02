@@ -83,6 +83,30 @@ Unique: `(product_id, collected_at, market)`
 
 raw 디버깅 샘플을 저장한다. Unique: `(platform, collected_at, external_product_id)`.
 
+## `product_change_history`
+
+상품의 변경 감지 대상 payload가 바뀐 시점을 저장한다. `products`는 최신 상태만 유지하므로, 이 테이블은 상품명, URL, 이미지 후보, 옵션, 상태 등 정규화 payload 변화 이력을 추적하는 용도다.
+
+| 컬럼 | 타입 | Null | 설명 |
+| --- | --- | --- | --- |
+| `id` | `BIGSERIAL` | No | PK |
+| `product_id` | `BIGINT` | No | `products.id` FK |
+| `changed_at` | `TIMESTAMPTZ` | No | 변경이 관측된 수집 시각 |
+| `change_type` | `TEXT` | No | 변경 유형. 현재는 신규 상품과 payload 변경 구분에 사용 |
+| `before_fingerprint` | `CHAR(64)` | Yes | 변경 전 `comparable_payload` SHA-256. 신규 상품이면 `NULL` |
+| `after_fingerprint` | `CHAR(64)` | No | 변경 후 `comparable_payload` SHA-256 |
+| `before_payload` | `JSONB` | Yes | 변경 전 비교 대상 payload. 신규 상품이면 `NULL` |
+| `after_payload` | `JSONB` | No | 변경 후 비교 대상 payload |
+| `created_at` | `TIMESTAMPTZ` | No | row 생성 시각 |
+
+Index: `(product_id, changed_at)`
+
+저장 규칙:
+
+- 신규 상품 저장 시 최초 상태를 남긴다.
+- 기존 상품은 `comparable_fingerprint`가 바뀐 경우에만 row를 추가한다.
+- 가격, 재고, 배송비 snapshot은 별도 테이블에 저장하므로 이 테이블의 주된 변경 감지 대상은 `comparable_payload`에 포함되는 상품 기본 정보다.
+
 ## `product_search_ranks`
 
 순위 의미가 있는 discovery/search 결과만 저장한다.
