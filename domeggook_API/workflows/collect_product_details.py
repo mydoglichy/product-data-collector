@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 
 from ..api.client import DomeggookApiError, DomeggookClient, create_domeggook_client
@@ -12,6 +13,7 @@ from ..config import DomeggookConfig, find_project_root, load_api_keys, load_con
 from ..services.logging_config import configure_logging
 from ..services.parsing import parse_detail_products
 from postgres_storage import discovered_product_ids, save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
+from .run_budget import RunBudget
 
 from ..persistence.storage import (
     clear_state,
@@ -29,6 +31,8 @@ def collect_details(
     config: DomeggookConfig,
     *,
     product_limit: int | None = None,
+    deadline_monotonic: float | None = None,
+    run_budget: RunBudget | None = None,
     dry_run: bool = False,
     client: DomeggookClient | None = None,
 ) -> dict[str, int]:
@@ -47,11 +51,43 @@ def collect_details(
     failures: list[dict[str, object]] = []
     raw_remaining = _raw_remaining(state, config.details.raw_sample_limit)
     success_count = 0
+    stopped_on_runtime_limit = False
+    stopped_on_daily_request_limit = False
 
     for index in range(start_index, len(product_ids), config.details.batch_size):
+        if _deadline_reached(deadline_monotonic):
+            stopped_on_runtime_limit = True
+            if not dry_run:
+                save_state(
+                    state_path,
+                    {
+                        "runCollectedAt": collected_at,
+                        "trackedListHash": list_hash,
+                        "nextIndex": index,
+                        "lastCompletedProductId": state.get("lastCompletedProductId"),
+                        "rawRemaining": raw_remaining,
+                    },
+                )
+            break
+        if run_budget is not None and not run_budget.can_call():
+            stopped_on_daily_request_limit = True
+            if not dry_run:
+                save_state(
+                    state_path,
+                    {
+                        "runCollectedAt": collected_at,
+                        "trackedListHash": list_hash,
+                        "nextIndex": index,
+                        "lastCompletedProductId": state.get("lastCompletedProductId"),
+                        "rawRemaining": raw_remaining,
+                    },
+                )
+            break
         batch = product_ids[index : index + config.details.batch_size]
         try:
             payload = client.get_item_view(batch)
+            if run_budget is not None:
+                run_budget.record_call()
             parsed_products, parsed_failures = parse_detail_products(payload, collected_at, raw_limit=raw_remaining)
             failures.extend(parsed_failures)
         except DomeggookApiError as exc:
@@ -94,13 +130,15 @@ def collect_details(
                 },
             )
 
-    if not dry_run and not failures:
+    if not dry_run and not failures and not stopped_on_runtime_limit and not stopped_on_daily_request_limit:
         clear_state(state_path)
 
     return {
         "trackedCount": len(product_ids),
         "successCount": success_count,
         "failureCount": len(failures),
+        "runtimeLimitReached": int(stopped_on_runtime_limit),
+        "dailyRequestLimitReached": int(stopped_on_daily_request_limit),
     }
 
 
@@ -160,6 +198,10 @@ def _without_raw(product: dict[str, object]) -> dict[str, object]:
     result = dict(product)
     result.pop("raw", None)
     return result
+
+
+def _deadline_reached(deadline_monotonic: float | None) -> bool:
+    return deadline_monotonic is not None and time.monotonic() >= deadline_monotonic
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -3,6 +3,7 @@
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
 
 from ..api.client import DomeggookApiError, DomeggookClient, ListRequest, create_domeggook_client
@@ -13,6 +14,7 @@ from ..services.parsing import parse_list_header, parse_list_items, parse_produc
 from ..persistence.storage import clear_state, load_state, save_state
 from ..services.time_utils import now_iso
 from postgres_storage import save_discovered_product_ids_if_enabled, save_search_ranks_if_enabled
+from .run_budget import RunBudget
 
 
 LOGGER = logging.getLogger("domeggook_API.workflows.discover_products")
@@ -25,6 +27,8 @@ def discover(
     *,
     keyword_limit: int | None = None,
     page_limit: int | None = None,
+    deadline_monotonic: float | None = None,
+    run_budget: RunBudget | None = None,
     dry_run: bool = False,
     client: DomeggookClient | None = None,
 ) -> dict[str, int]:
@@ -47,12 +51,24 @@ def discover(
     stopped_on_failure = False
     page_count = 0
     stopped_on_limit = False
+    stopped_on_runtime_limit = False
+    stopped_on_daily_request_limit = False
 
     positions = _discovery_positions(categories, config)
     start_index = _discovery_start_index(positions, state)
     for position_index, (category, market, reason, sort_code) in enumerate(positions[start_index:], start=start_index):
         page = _state_page(state) if position_index == start_index else 1
         while True:
+            if _deadline_reached(deadline_monotonic):
+                stopped_on_runtime_limit = True
+                if not dry_run:
+                    _save_next_discovery_state(state_path, run_collected_at, positions, position_index, page)
+                break
+            if run_budget is not None and not run_budget.can_call():
+                stopped_on_daily_request_limit = True
+                if not dry_run:
+                    _save_next_discovery_state(state_path, run_collected_at, positions, position_index, page)
+                break
             collected_at = run_collected_at
             try:
                 payload = client.get_item_list(
@@ -64,6 +80,8 @@ def discover(
                         category_code=category.code,
                     )
                 )
+                if run_budget is not None:
+                    run_budget.record_call()
                 items = parse_list_items(payload)
                 header = parse_list_header(payload)
                 page_count += 1
@@ -168,9 +186,15 @@ def discover(
             page += 1
             if not dry_run:
                 _save_next_discovery_state(state_path, collected_at, positions, position_index, page)
-        if stopped_on_failure or stopped_on_limit:
+        if stopped_on_failure or stopped_on_limit or stopped_on_runtime_limit or stopped_on_daily_request_limit:
             break
-    if not dry_run and not stopped_on_failure and not stopped_on_limit:
+    if (
+        not dry_run
+        and not stopped_on_failure
+        and not stopped_on_limit
+        and not stopped_on_runtime_limit
+        and not stopped_on_daily_request_limit
+    ):
         clear_state(state_path)
 
     return {
@@ -180,6 +204,8 @@ def discover(
         "newProductCount": new_products,
         "trackedCount": 0,
         "failureCount": failures,
+        "runtimeLimitReached": int(stopped_on_runtime_limit),
+        "dailyRequestLimitReached": int(stopped_on_daily_request_limit),
     }
 
 
@@ -271,6 +297,10 @@ def _text_or_none(value: object) -> str | None:
     if value in (None, ""):
         return None
     return str(value)
+
+
+def _deadline_reached(deadline_monotonic: float | None) -> bool:
+    return deadline_monotonic is not None and time.monotonic() >= deadline_monotonic
 
 
 def main(argv: list[str] | None = None) -> int:
