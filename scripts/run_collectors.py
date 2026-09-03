@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,8 @@ from ownerclan_API.workflows.main import run as run_ownerclan
 from postgres_storage import product_counts, postgres_enabled, test_connection
 
 LOGGER = logging.getLogger("collector.runner")
+MAX_LOG_BYTES = 1_000_000
+MAX_LOG_FILES = 5
 
 
 def main() -> int:
@@ -134,15 +137,34 @@ def _truthy(value: str | None) -> bool:
 def _configure_logging() -> None:
     log_dir = PROJECT_ROOT / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
+    _prune_rotated_logs(log_dir, "collector-runner.log", MAX_LOG_FILES)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler(log_dir / "collector-runner.log", encoding="utf-8"),
+            RotatingFileHandler(
+                log_dir / "collector-runner.log",
+                maxBytes=MAX_LOG_BYTES,
+                backupCount=MAX_LOG_FILES - 1,
+                encoding="utf-8",
+            ),
         ],
         force=True,
     )
+
+
+def _prune_rotated_logs(log_dir: Path, base_name: str, max_files: int) -> None:
+    logs = sorted(
+        log_dir.glob(f"{base_name}*"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for path in logs[max(max_files, 1) :]:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 if __name__ == "__main__":

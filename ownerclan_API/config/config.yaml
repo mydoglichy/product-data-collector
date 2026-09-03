@@ -9,19 +9,18 @@ details:
   batch_size: 100
 
 incremental:
-  page_size: 1000
+  page_size: 500
   overlap_minutes: 120
   include_item_histories: false
 
 request:
-  interval_seconds: 1.2
-  timeout_seconds: 20
-  max_retries: 3
+  interval_seconds: 0.4
+  timeout_seconds: 15
+  max_retries: 2
   retry_after_max_seconds: 300
 
 output:
   category_cache_path: ownerclan_API/data/state/categories.json
-  output_dir: ownerclan_API/data/processed
   state_dir: ownerclan_API/data/state
   log_dir: ownerclan_API/data/logs
   raw_sample_limit: 3

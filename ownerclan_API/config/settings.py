@@ -43,7 +43,6 @@ class RequestConfig:
 @dataclass(frozen=True)
 class OutputConfig:
     category_cache_path: Path
-    output_dir: Path
     state_dir: Path
     log_dir: Path
     raw_sample_limit: int
@@ -133,7 +132,6 @@ def load_config(path: Path, project_root: Path | None = None) -> OwnerclanConfig
         ),
         output=OutputConfig(
             category_cache_path=_resolve(root, output.get("category_cache_path") or "ownerclan_API/data/state/categories.json"),
-            output_dir=_resolve(root, output.get("output_dir") or "ownerclan_API/data/processed"),
             state_dir=_resolve(root, output.get("state_dir") or "ownerclan_API/data/state"),
             log_dir=_resolve(root, output.get("log_dir") or "ownerclan_API/data/logs"),
             raw_sample_limit=raw_sample_limit,
