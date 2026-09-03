@@ -5,7 +5,7 @@
 Every day around midnight, collect product data into PostgreSQL with separate runs per platform.
 
 - Ownerclan: collect all products once per day. If Ownerclan temporarily rate-limits, wait and resume.
-- Domeggook/Domeme: continue the full product run until the daily API call budget is used or the full run finishes. It resumes the next day from saved state.
+- Domeggook/Domeme: use product ids already stored in PostgreSQL, collect details until the daily API call budget is used or all known products are done, then use leftover calls to check recently registered product ids.
 - Coupang: collect the configured keyword search data once per day.
 
 In this document, "full run" means one pass over all configured products/categories for that platform.
@@ -62,9 +62,33 @@ Daily command:
 python scripts\run_daily_collector.py --platform domeggook
 ```
 
+Initial product id collection should be done before server deployment, usually from a local machine:
+
+```powershell
+python -m domeggook_API.workflows.discover_products
+```
+
+That stores product ids in PostgreSQL `product_discovery_targets`. The server daily command should then focus on product detail collection:
+
+```powershell
+python scripts\run_daily_collector.py --platform domeggook
+```
+
 By default, this uses `request.max_requests_per_day` from `domeggook_API/config/config.yaml` as the per-run API call budget. The current configured value is `14000`, leaving a buffer below the official 15000/day limit.
 
-When the daily call budget is reached, it saves the current position and exits cleanly. The next run resumes from that state. If the full run finishes before using the whole daily budget, it stops normally.
+When the daily call budget is reached, it saves the current detail position and exits cleanly. The next run resumes from that state. If all known product details finish before using the whole daily budget, it checks recently registered product ids with `sort=da` and inserts only new product ids into `product_discovery_targets`.
+
+Recent product id checks are shallow by default:
+
+- sort: `recent` / `da`
+- pages per category/market position: `1`
+- state file: `domeggook_API/data/state/recent-discovery-state.json`
+
+Increase the recent check depth only if new products are being missed:
+
+```powershell
+python scripts\run_daily_collector.py --platform domeggook --domeggook-recent-pages-per-position 2
+```
 
 Optional runtime cap:
 
@@ -78,6 +102,7 @@ State files:
 
 - `domeggook_API/data/state/discovery-state.json`
 - `domeggook_API/data/state/detail-collection-state.json`
+- `domeggook_API/data/state/recent-discovery-state.json`
 
 When both stages finish without failure or intentional pause, those state files are cleared.
 
@@ -100,7 +125,8 @@ Important reason values:
 - `all_categories_finished`: Ownerclan finished all categories.
 - `runtime_limit_reached`: Domeggook stopped because the configured daily runtime ended.
 - `daily_request_limit_reached`: Domeggook stopped because the configured API call budget was used.
-- `all_domeggook_products_finished`: Domeggook finished both product discovery and detail collection.
+- `all_domeggook_details_finished`: Domeggook finished known product detail collection.
+- `all_domeggook_details_finished_and_recent_products_checked`: Domeggook finished known product detail collection and checked recently registered product ids with leftover calls.
 - `all_coupang_keywords_finished`: Coupang finished configured keywords.
 - `rate_limit_retry_exhausted`: Ownerclan kept hitting rate limits beyond configured retry handling.
 - `failure`: general failure.

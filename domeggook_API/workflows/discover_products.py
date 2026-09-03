@@ -29,6 +29,9 @@ def discover(
     page_limit: int | None = None,
     deadline_monotonic: float | None = None,
     run_budget: RunBudget | None = None,
+    allowed_reasons: set[str] | None = None,
+    max_pages_per_position: int | None = None,
+    state_filename: str = "discovery-state.json",
     dry_run: bool = False,
     client: DomeggookClient | None = None,
 ) -> dict[str, int]:
@@ -41,7 +44,7 @@ def discover(
     if keyword_limit is not None:
         categories = categories[:keyword_limit]
 
-    state_path = data_dir / "state" / "discovery-state.json"
+    state_path = data_dir / "state" / state_filename
     state = load_state(state_path)
     run_collected_at = str(state.get("runCollectedAt") or now_iso(config.timezone))
     discovered = 0
@@ -53,11 +56,13 @@ def discover(
     stopped_on_limit = False
     stopped_on_runtime_limit = False
     stopped_on_daily_request_limit = False
+    inserted_target_count = 0
 
-    positions = _discovery_positions(categories, config)
+    positions = _discovery_positions(categories, config, allowed_reasons=allowed_reasons)
     start_index = _discovery_start_index(positions, state)
     for position_index, (category, market, reason, sort_code) in enumerate(positions[start_index:], start=start_index):
         page = _state_page(state) if position_index == start_index else 1
+        pages_for_position = 0
         while True:
             if _deadline_reached(deadline_monotonic):
                 stopped_on_runtime_limit = True
@@ -85,6 +90,7 @@ def discover(
                 items = parse_list_items(payload)
                 header = parse_list_header(payload)
                 page_count += 1
+                pages_for_position += 1
             except DomeggookApiError as exc:
                 failures += 1
                 stopped_on_failure = True
@@ -161,7 +167,7 @@ def discover(
                     )
 
             if not dry_run:
-                save_discovered_product_ids_if_enabled(
+                inserted_target_count += save_discovered_product_ids_if_enabled(
                     project_root=project_root,
                     platform="domeggook",
                     records=discovery_target_records,
@@ -175,6 +181,10 @@ def discover(
                 )
 
             if len(items) < items_per_page:
+                if not dry_run:
+                    _save_next_discovery_state(state_path, collected_at, positions, position_index, None)
+                break
+            if max_pages_per_position is not None and pages_for_position >= max_pages_per_position:
                 if not dry_run:
                     _save_next_discovery_state(state_path, collected_at, positions, position_index, None)
                 break
@@ -202,6 +212,7 @@ def discover(
         "pageCount": page_count,
         "discoveredCount": discovered,
         "newProductCount": new_products,
+        "insertedTargetCount": inserted_target_count,
         "trackedCount": 0,
         "failureCount": failures,
         "runtimeLimitReached": int(stopped_on_runtime_limit),
@@ -213,12 +224,18 @@ def _global_rank(current_page: int, items_per_page: int, index: int) -> int:
     return (current_page - 1) * items_per_page + index
 
 
-def _discovery_positions(categories: list[object], config: DomeggookConfig) -> list[tuple[object, str, str, str]]:
+def _discovery_positions(
+    categories: list[object],
+    config: DomeggookConfig,
+    *,
+    allowed_reasons: set[str] | None = None,
+) -> list[tuple[object, str, str, str]]:
     return [
         (category, market, reason, sort_code)
         for category in categories
         for market in config.discovery.markets
         for reason, sort_code in config.discovery.sorts.items()
+        if allowed_reasons is None or reason in allowed_reasons
     ]
 
 

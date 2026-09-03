@@ -33,6 +33,7 @@ def main() -> int:
     parser.add_argument("--ownerclan-refresh-categories", action="store_true")
     parser.add_argument("--domeggook-max-runtime-hours", type=float, default=None)
     parser.add_argument("--domeggook-max-api-calls", type=int, default=None)
+    parser.add_argument("--domeggook-recent-pages-per-position", type=int, default=1)
     args = parser.parse_args()
 
     load_dotenv(PROJECT_ROOT / ".env", override=False)
@@ -83,6 +84,8 @@ def _run_platform(args: argparse.Namespace) -> Any:
             PROJECT_ROOT / "domeggook_API" / "config" / "config.yaml",
             max_runtime_seconds=max_runtime_seconds,
             max_api_calls=args.domeggook_max_api_calls,
+            mode="daily",
+            recent_pages_per_position=max(args.domeggook_recent_pages_per_position, 1),
             dry_run=args.dry_run,
         )
     config = load_coupang_config(PROJECT_ROOT / "coupang_API" / "config" / "config.yaml")
@@ -120,7 +123,9 @@ def _reason(platform: str, result: Any, exit_code: int) -> str:
     if platform == "ownerclan":
         return "all_categories_finished"
     if platform == "domeggook":
-        return "all_domeggook_products_finished"
+        if _recent_discovery_ran(result):
+            return "all_domeggook_details_finished_and_recent_products_checked"
+        return "all_domeggook_details_finished"
     return "all_coupang_keywords_finished"
 
 
@@ -140,6 +145,13 @@ def _daily_request_limit_reached(result: Any) -> bool:
         isinstance(stage, dict) and int(stage.get("dailyRequestLimitReached") or 0) > 0
         for stage in result.values()
     )
+
+
+def _recent_discovery_ran(result: Any) -> bool:
+    if not isinstance(result, dict):
+        return False
+    recent = result.get("recentDiscovery")
+    return isinstance(recent, dict) and not recent.get("skipReason")
 
 
 def _rate_limit_failure(result: Any) -> bool:
