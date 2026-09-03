@@ -31,7 +31,8 @@ def main() -> int:
     parser.add_argument("--ownerclan-failure-retry-seconds", type=int, default=60)
     parser.add_argument("--ownerclan-max-failure-restarts", type=int, default=50)
     parser.add_argument("--ownerclan-refresh-categories", action="store_true")
-    parser.add_argument("--domeggook-max-runtime-hours", type=float, default=3.0)
+    parser.add_argument("--domeggook-max-runtime-hours", type=float, default=None)
+    parser.add_argument("--domeggook-max-api-calls", type=int, default=None)
     args = parser.parse_args()
 
     load_dotenv(PROJECT_ROOT / ".env", override=False)
@@ -81,6 +82,7 @@ def _run_platform(args: argparse.Namespace) -> Any:
             PROJECT_ROOT,
             PROJECT_ROOT / "domeggook_API" / "config" / "config.yaml",
             max_runtime_seconds=max_runtime_seconds,
+            max_api_calls=args.domeggook_max_api_calls,
             dry_run=args.dry_run,
         )
     config = load_coupang_config(PROJECT_ROOT / "coupang_API" / "config" / "config.yaml")
@@ -101,7 +103,7 @@ def _exit_code(platform: str, result: Any) -> int:
 def _status(platform: str, result: Any, exit_code: int) -> str:
     if exit_code:
         return "failed"
-    if platform == "domeggook" and _runtime_limit_reached(result):
+    if platform == "domeggook" and (_runtime_limit_reached(result) or _daily_request_limit_reached(result)):
         return "paused"
     return "completed"
 
@@ -113,6 +115,8 @@ def _reason(platform: str, result: Any, exit_code: int) -> str:
         return "failure"
     if platform == "domeggook" and _runtime_limit_reached(result):
         return "runtime_limit_reached"
+    if platform == "domeggook" and _daily_request_limit_reached(result):
+        return "daily_request_limit_reached"
     if platform == "ownerclan":
         return "all_categories_finished"
     if platform == "domeggook":
@@ -125,6 +129,15 @@ def _runtime_limit_reached(result: Any) -> bool:
         return False
     return any(
         isinstance(stage, dict) and int(stage.get("runtimeLimitReached") or 0) > 0
+        for stage in result.values()
+    )
+
+
+def _daily_request_limit_reached(result: Any) -> bool:
+    if not isinstance(result, dict):
+        return False
+    return any(
+        isinstance(stage, dict) and int(stage.get("dailyRequestLimitReached") or 0) > 0
         for stage in result.values()
     )
 

@@ -10,6 +10,7 @@ from ..api.client import create_domeggook_client
 from .collect_product_details import collect_details
 from ..config import find_project_root, load_api_keys, load_config
 from .discover_products import discover
+from .run_budget import RunBudget
 from ..services.logging_config import configure_logging
 from ..persistence.storage import FileLock
 
@@ -24,6 +25,7 @@ def run(
     limit: int | None = None,
     page_limit: int | None = None,
     max_runtime_seconds: float | None = None,
+    max_api_calls: int | None = None,
     dry_run: bool = False,
 ) -> dict[str, dict[str, int]]:
     config = load_config(config_path)
@@ -32,24 +34,49 @@ def run(
     deadline_monotonic = None
     if max_runtime_seconds is not None and max_runtime_seconds > 0:
         deadline_monotonic = time.monotonic() + max_runtime_seconds
+    run_budget = RunBudget(max_api_calls if max_api_calls is not None else config.request.max_requests_per_day)
+    data_dir = project_root / "domeggook_API" / "data"
+    discovery_state_path = data_dir / "state" / "discovery-state.json"
+    detail_state_path = data_dir / "state" / "detail-collection-state.json"
     with FileLock(project_root / "domeggook_API" / "data" / "logs" / "collector.lock"):
-        discovery = discover(
-            project_root,
-            config,
-            keyword_limit=limit,
-            page_limit=page_limit,
-            deadline_monotonic=deadline_monotonic,
-            dry_run=dry_run,
-            client=client,
-        )
-        if int(discovery.get("runtimeLimitReached") or 0):
-            details = {"trackedCount": 0, "successCount": 0, "failureCount": 0, "runtimeLimitReached": 1}
+        if detail_state_path.exists() and not discovery_state_path.exists() and limit is None and page_limit is None:
+            discovery = {
+                "categoryCount": 0,
+                "pageCount": 0,
+                "discoveredCount": 0,
+                "newProductCount": 0,
+                "trackedCount": 0,
+                "failureCount": 0,
+                "runtimeLimitReached": 0,
+                "dailyRequestLimitReached": 0,
+                "skippedBecauseDetailResume": 1,
+            }
+        else:
+            discovery = discover(
+                project_root,
+                config,
+                keyword_limit=limit,
+                page_limit=page_limit,
+                deadline_monotonic=deadline_monotonic,
+                run_budget=run_budget,
+                dry_run=dry_run,
+                client=client,
+            )
+        if int(discovery.get("runtimeLimitReached") or 0) or int(discovery.get("dailyRequestLimitReached") or 0):
+            details = {
+                "trackedCount": 0,
+                "successCount": 0,
+                "failureCount": 0,
+                "runtimeLimitReached": int(discovery.get("runtimeLimitReached") or 0),
+                "dailyRequestLimitReached": int(discovery.get("dailyRequestLimitReached") or 0),
+            }
         else:
             details = collect_details(
                 project_root,
                 config,
                 product_limit=limit,
                 deadline_monotonic=deadline_monotonic,
+                run_budget=run_budget,
                 dry_run=dry_run,
                 client=client,
             )
@@ -62,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=None, help="Limit keywords and active product ids for a small real API run.")
     parser.add_argument("--page-limit", type=int, default=None, help="Limit discovery pages for a small real API run.")
     parser.add_argument("--max-runtime-hours", type=float, default=None, help="Stop cleanly after this many hours and resume next run.")
+    parser.add_argument("--max-api-calls", type=int, default=None, help="Stop cleanly after this many Domeggook API calls in this run.")
     parser.add_argument("--dry-run", action="store_true", help="Call API but do not write data files.")
     args = parser.parse_args(argv)
 
@@ -75,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         limit=args.limit,
         page_limit=args.page_limit,
         max_runtime_seconds=max_runtime_seconds,
+        max_api_calls=args.max_api_calls,
         dry_run=args.dry_run,
     )
     print("Domeggook collection summary")

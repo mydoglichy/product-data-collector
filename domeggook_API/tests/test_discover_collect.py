@@ -3,6 +3,7 @@ import json
 
 from domeggook_API.config import DetailsConfig, DiscoveryConfig, DomeggookConfig, RequestConfig
 from domeggook_API.workflows.discover_products import discover
+from domeggook_API.workflows.run_budget import RunBudget
 from domeggook_API.persistence.storage import atomic_write_json
 
 
@@ -253,6 +254,20 @@ def test_discover_runtime_limit_saves_resume_state_without_calling_api(tmp_path,
     assert saved_state["nextPage"] == 1
 
 
+def test_discover_daily_request_limit_saves_resume_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTGRES_ENABLED", "false")
+    api_dir = tmp_path / "domeggook_API"
+    api_dir.mkdir()
+    client = FakeClient()
+
+    result = discover(tmp_path, _config(), run_budget=RunBudget(0), client=client)
+
+    assert result["dailyRequestLimitReached"] == 1
+    assert client.list_requests == []
+    saved_state = json.loads((api_dir / "data" / "state" / "discovery-state.json").read_text(encoding="utf-8"))
+    assert saved_state["nextPage"] == 1
+
+
 def test_da_discovery_products_remain_detail_targets(tmp_path, monkeypatch):
     monkeypatch.setenv("POSTGRES_ENABLED", "false")
     api_dir = tmp_path / "domeggook_API"
@@ -416,6 +431,24 @@ def test_collect_details_runtime_limit_saves_resume_index_without_calling_api(tm
     result = collect_details(tmp_path, _config(), deadline_monotonic=0, client=client)
 
     assert result["runtimeLimitReached"] == 1
+    assert client.detail_requests == []
+    saved_state = json.loads((api_dir / "data" / "state" / "detail-collection-state.json").read_text(encoding="utf-8"))
+    assert saved_state["nextIndex"] == 0
+
+
+def test_collect_details_daily_request_limit_saves_resume_index(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTGRES_ENABLED", "false")
+    api_dir = tmp_path / "domeggook_API"
+    api_dir.mkdir()
+    monkeypatch.setattr(
+        "domeggook_API.workflows.collect_product_details.discovered_product_ids",
+        lambda **kwargs: ["100", "200"],
+    )
+    client = FakeClient()
+
+    result = collect_details(tmp_path, _config(), run_budget=RunBudget(0), client=client)
+
+    assert result["dailyRequestLimitReached"] == 1
     assert client.detail_requests == []
     saved_state = json.loads((api_dir / "data" / "state" / "detail-collection-state.json").read_text(encoding="utf-8"))
     assert saved_state["nextIndex"] == 0
