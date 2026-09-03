@@ -68,7 +68,7 @@ python -m domeggook_API.workflows.discover_products
 python -m domeggook_API.workflows.collect_product_details
 ```
 
-운영 상세는 [DAILY_COLLECTION_OPERATIONS.md](docs/operations/DAILY_COLLECTION_OPERATIONS.md)를 봅니다.
+운영 상세는 [DAILY_COLLECTION_OPERATIONS.md](docs/operations/DAILY_COLLECTION_OPERATIONS.md)를 봅니다. 플랫폼별 순회 방식, RPM/worker, 중단/재개 구현은 [COLLECTION_METHODS.md](docs/operations/COLLECTION_METHODS.md)에 정리했습니다.
 
 ## 테스트
 

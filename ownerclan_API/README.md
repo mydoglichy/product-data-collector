@@ -21,6 +21,8 @@ python scripts\run_daily_collector.py --platform ownerclan
 
 `category_workers`가 2 이상이면 여러 카테고리를 병렬 처리합니다. 모든 worker는 하나의 공유 `RateLimiter`를 사용하므로 worker 수를 늘려도 전체 API 호출 간격은 `config/config.yaml`의 `request.interval_seconds` 기준을 공유합니다.
 
+상세한 순회 방식은 루트 운영 문서의 [COLLECTION_METHODS.md](../docs/operations/COLLECTION_METHODS.md#오너클랜)를 봅니다. 요약하면 최하위 카테고리 캐시를 만들고, 각 카테고리의 `allItems(first=500, after=cursor)` 페이지를 끝까지 순회합니다. 8개 worker는 서로 다른 카테고리를 나눠 맡지만 하나의 전역 limiter를 공유해 전체 약 150 RPM으로 제한됩니다. 병렬 진행상태는 `category-collection-progress.json`에 완료 카테고리와 카테고리별 cursor를 저장해 재시작 시 이어갑니다.
+
 ## 설정과 제한
 
 `config/config.yaml`의 현재 기준:
