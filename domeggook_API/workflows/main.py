@@ -35,17 +35,33 @@ def run(
     if max_runtime_seconds is not None and max_runtime_seconds > 0:
         deadline_monotonic = time.monotonic() + max_runtime_seconds
     run_budget = RunBudget(max_api_calls if max_api_calls is not None else config.request.max_requests_per_day)
+    data_dir = project_root / "domeggook_API" / "data"
+    discovery_state_path = data_dir / "state" / "discovery-state.json"
+    detail_state_path = data_dir / "state" / "detail-collection-state.json"
     with FileLock(project_root / "domeggook_API" / "data" / "logs" / "collector.lock"):
-        discovery = discover(
-            project_root,
-            config,
-            keyword_limit=limit,
-            page_limit=page_limit,
-            deadline_monotonic=deadline_monotonic,
-            run_budget=run_budget,
-            dry_run=dry_run,
-            client=client,
-        )
+        if detail_state_path.exists() and not discovery_state_path.exists() and limit is None and page_limit is None:
+            discovery = {
+                "categoryCount": 0,
+                "pageCount": 0,
+                "discoveredCount": 0,
+                "newProductCount": 0,
+                "trackedCount": 0,
+                "failureCount": 0,
+                "runtimeLimitReached": 0,
+                "dailyRequestLimitReached": 0,
+                "skippedBecauseDetailResume": 1,
+            }
+        else:
+            discovery = discover(
+                project_root,
+                config,
+                keyword_limit=limit,
+                page_limit=page_limit,
+                deadline_monotonic=deadline_monotonic,
+                run_budget=run_budget,
+                dry_run=dry_run,
+                client=client,
+            )
         if int(discovery.get("runtimeLimitReached") or 0) or int(discovery.get("dailyRequestLimitReached") or 0):
             details = {
                 "trackedCount": 0,
