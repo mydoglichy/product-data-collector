@@ -2,6 +2,8 @@
 
 매일 자정 전후에 플랫폼별 수집기를 따로 실행해 PostgreSQL에 상품 snapshot을 저장합니다. 이 문서는 `scripts/run_daily_collector.py` 기준 운영값만 설명합니다.
 
+플랫폼별 실제 순회 방식, RPM/worker, 동적 재개 구현은 [COLLECTION_METHODS.md](COLLECTION_METHODS.md)를 기준으로 봅니다.
+
 ## 권장 실행
 
 플랫폼을 분리해서 실행합니다. 제한, 중단 사유, 상태 파일을 플랫폼별로 명확히 남기기 위해서입니다.

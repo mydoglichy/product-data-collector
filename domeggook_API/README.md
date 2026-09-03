@@ -18,6 +18,8 @@ python -m domeggook_API --limit 1 --dry-run
 python scripts\run_daily_collector.py --platform domeggook
 ```
 
+상세한 순회 방식은 루트 운영 문서의 [COLLECTION_METHODS.md](../docs/operations/COLLECTION_METHODS.md#도매꾹도매매)를 봅니다. 요약하면 최하위 카테고리마다 `dome`, `supply` market과 설정된 sort 조합을 만들고 list page를 끝까지 순회해 상품 ID를 `product_discovery_targets`에 저장합니다. daily 모드는 기존 ID의 상세 수집을 먼저 수행하고, 예산이 남을 때만 `recent=da`를 position당 기본 1페이지씩 얕게 확인합니다.
+
 ## 설정과 제한
 
 `config/config.yaml`의 현재 기준:
