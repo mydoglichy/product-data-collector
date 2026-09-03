@@ -7,7 +7,7 @@
 - 대상: Seller GraphQL API
 - 요청: `allItems(first: 1)`
 - 저장: 없음
-- 스크립트: `scripts/ownerclan_rate_probe.py`
+- 스크립트: `tests/probes/ownerclan_rate_probe.py`
 
 ## 분당 호출 테스트 결과
 
@@ -30,11 +30,12 @@
 - 분당 200회 안팎까지는 429 또는 GraphQL `Too many requests`가 확인되지 않았다.
 - 180 RPM 1시간 지속 테스트에서도 rate limit은 확인되지 않았다.
 - 240 RPM에서는 rate limit보다 응답 지연/타임아웃이 먼저 발생했다.
-- 운영 수집 설정은 우선 180 RPM 이하가 적절하다.
-- 현재 권장값: `request.interval_seconds: 0.33`
+- 180 RPM 1시간 지속 테스트는 성공했지만 이후 더 높은 속도에서 timeout과 gateway backoff가 먼저 관측됐다.
+- 현재 운영 수집 설정은 전역 limiter 기준 약 150 RPM이다.
+- 현재 권장값: `request.interval_seconds: 0.4`
 
 ## 재테스트 명령
 
 ```powershell
-python tests\probes\ownerclan_rate_probe.py --rpm 180 --duration 60
+python tests\probes\ownerclan_rate_probe.py --rpm 150 --duration 60
 ```

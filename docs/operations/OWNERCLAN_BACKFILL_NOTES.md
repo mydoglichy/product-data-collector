@@ -122,7 +122,7 @@ probe 반영 사항:
 - 전체 합산 목표 RPM은 120~150부터 시작
 - 429, `Too many requests`, `502 + Retry-After`가 보이면 즉시 90초 이상 쉬고 RPM을 낮춘다.
 
-서버 자원이 충분하고 429/Retry-After가 없으면 worker를 5~6까지 올릴 수 있다. 단, 호출 한도보다 Ownerclan 응답 지연과 PostgreSQL write throughput이 먼저 병목이 될 수 있다.
+서버 자원이 충분하고 429/Retry-After가 없으면 worker 수를 8까지 사용할 수 있다. 단, 호출 한도보다 Ownerclan 응답 지연과 PostgreSQL write throughput이 먼저 병목이 될 수 있다.
 ## 2026-09-03 변경: 병렬 worker + 전역 150 RPM limiter
 
 ### 변경 목적
