@@ -5,7 +5,7 @@
 Every day around midnight, collect product data into PostgreSQL with separate runs per platform.
 
 - Ownerclan: collect all products once per day. If Ownerclan temporarily rate-limits, wait and resume.
-- Domeggook/Domeme: continue the full product run for up to 3 hours per day. It resumes the next day from saved state.
+- Domeggook/Domeme: continue the full product run until the daily API call budget is used or the full run finishes. It resumes the next day from saved state.
 - Coupang: collect the configured keyword search data once per day.
 
 In this document, "full run" means one pass over all configured products/categories for that platform.
@@ -19,7 +19,7 @@ python scripts\run_daily_collector.py --platform ownerclan
 ```
 
 ```powershell
-python scripts\run_daily_collector.py --platform domeggook --domeggook-max-runtime-hours 3
+python scripts\run_daily_collector.py --platform domeggook
 ```
 
 ```powershell
@@ -59,17 +59,27 @@ If a temporary rate limit happens, the collector waits and resumes from saved pr
 Daily command:
 
 ```powershell
+python scripts\run_daily_collector.py --platform domeggook
+```
+
+By default, this uses `request.max_requests_per_day` from `domeggook_API/config/config.yaml` as the per-run API call budget. The current configured value is `14000`, leaving a buffer below the official 15000/day limit.
+
+When the daily call budget is reached, it saves the current position and exits cleanly. The next run resumes from that state. If the full run finishes before using the whole daily budget, it stops normally.
+
+Optional runtime cap:
+
+```powershell
 python scripts\run_daily_collector.py --platform domeggook --domeggook-max-runtime-hours 3
 ```
 
-The 3-hour limit is now handled inside the Python workflow. When time is up, it saves the current position and exits cleanly. The next run resumes from that state.
+Use this only when the server needs a hard runtime window. It is not the default daily strategy.
 
 State files:
 
 - `domeggook_API/data/state/discovery-state.json`
 - `domeggook_API/data/state/detail-collection-state.json`
 
-When both stages finish without failure or runtime pause, those state files are cleared.
+When both stages finish without failure or intentional pause, those state files are cleared.
 
 ## Status Files
 
@@ -82,13 +92,14 @@ Each daily command writes a human-readable status file:
 Important status values:
 
 - `completed`: this platform finished its full run for this execution.
-- `paused`: the platform stopped intentionally, usually because the daily runtime limit was reached.
+- `paused`: the platform stopped intentionally, usually because the daily API call budget or runtime limit was reached.
 - `failed`: the platform hit an error that needs attention.
 
 Important reason values:
 
 - `all_categories_finished`: Ownerclan finished all categories.
 - `runtime_limit_reached`: Domeggook stopped because the configured daily runtime ended.
+- `daily_request_limit_reached`: Domeggook stopped because the configured API call budget was used.
 - `all_domeggook_products_finished`: Domeggook finished both product discovery and detail collection.
 - `all_coupang_keywords_finished`: Coupang finished configured keywords.
 - `rate_limit_retry_exhausted`: Ownerclan kept hitting rate limits beyond configured retry handling.
