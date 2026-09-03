@@ -3,6 +3,8 @@ import json
 import logging
 import time
 
+import requests
+
 from ownerclan_API.api.auth import JwtProvider, extract_token, extract_token_response, jwt_exp
 from ownerclan_API.api.client import OwnerclanClient, OwnerclanGraphQLError
 from ownerclan_API.api.rate_limiter import RateLimiter
@@ -31,7 +33,10 @@ class Session:
 
     def get(self, url, params=None, headers=None, timeout=None):
         self.calls.append(("get", url, params, headers, timeout))
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def test_jwt_response_handling_extracts_token_and_exp():
@@ -110,6 +115,35 @@ def test_graphql_too_many_requests_is_retried():
 
     assert client.graphql("query { ok }") == {"ok": True}
     assert len([call for call in session.calls if call[0] == "get"]) == 2
+
+
+def test_retry_after_60_backs_off_for_90_seconds(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr("ownerclan_API.api.client.time.sleep", lambda seconds: sleeps.append(seconds))
+    provider = StubProvider(["token"])
+    session = Session([
+        Response(status_code=502, headers={"Retry-After": "60"}, payload={}),
+        Response(payload={"data": {"ok": True}}),
+    ])
+    client = OwnerclanClient(provider, "production", RateLimiter(0), 10, 1, 300, session=session)
+
+    assert client.graphql("query { ok }") == {"ok": True}
+    assert sleeps == [90.0]
+
+
+def test_second_timeout_backs_off_for_90_seconds(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr("ownerclan_API.api.client.time.sleep", lambda seconds: sleeps.append(seconds))
+    provider = StubProvider(["token"])
+    session = Session([
+        requests.ReadTimeout(),
+        requests.ReadTimeout(),
+        Response(payload={"data": {"ok": True}}),
+    ])
+    client = OwnerclanClient(provider, "production", RateLimiter(0), 10, 2, 300, session=session)
+
+    assert client.graphql("query { ok }") == {"ok": True}
+    assert sleeps == [1, 90.0]
 
 
 def test_graphql_utf8_content_is_used_before_response_text_decoding():

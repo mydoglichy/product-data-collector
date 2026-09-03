@@ -29,8 +29,21 @@ class ApiMetrics:
         self._timeouts = 0
         self._lock = Lock()
 
-    def record_success(self, *, operation: str, status_code: int | None = None, item_count: int | None = None) -> None:
-        self._record(operation=operation, status_code=status_code, success=True, item_count=item_count)
+    def record_success(
+        self,
+        *,
+        operation: str,
+        status_code: int | None = None,
+        item_count: int | None = None,
+        duration_seconds: float | None = None,
+    ) -> None:
+        self._record(
+            operation=operation,
+            status_code=status_code,
+            success=True,
+            item_count=item_count,
+            duration_seconds=duration_seconds,
+        )
 
     def record_failure(
         self,
@@ -39,8 +52,16 @@ class ApiMetrics:
         status_code: int | None = None,
         error: str | None = None,
         timed_out: bool = False,
+        duration_seconds: float | None = None,
     ) -> None:
-        self._record(operation=operation, status_code=status_code, success=False, error=error, timed_out=timed_out)
+        self._record(
+            operation=operation,
+            status_code=status_code,
+            success=False,
+            error=error,
+            timed_out=timed_out,
+            duration_seconds=duration_seconds,
+        )
 
     def snapshot(self) -> ApiMetricsSnapshot:
         with self._lock:
@@ -62,6 +83,7 @@ class ApiMetrics:
         item_count: int | None = None,
         error: str | None = None,
         timed_out: bool = False,
+        duration_seconds: float | None = None,
     ) -> None:
         with self._lock:
             self._calls += 1
@@ -95,6 +117,8 @@ class ApiMetrics:
             fields["status"] = status_code
         if item_count is not None:
             fields["items"] = item_count
+        if duration_seconds is not None:
+            fields["durationSeconds"] = round(duration_seconds, 3)
         if error:
             fields["error"] = error[:160]
         self.logger.info("api_metrics %s", " ".join(f"{key}={value}" for key, value in fields.items()))

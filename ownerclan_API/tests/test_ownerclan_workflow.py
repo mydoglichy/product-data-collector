@@ -1,7 +1,7 @@
 ﻿from pathlib import Path
 
 from ownerclan_API.api.client import OwnerclanGraphQLError
-from ownerclan_API.workflows.collect_by_categories import collect_by_categories
+from ownerclan_API.workflows.collect_by_categories import collect_by_categories, collect_by_categories_parallel
 from ownerclan_API.workflows.collect_product_details import collect_details, fetch_items_batch
 from ownerclan_API.config import (
     DetailsConfig,
@@ -92,7 +92,7 @@ def test_keyword_default_and_new_search_and_dedupes_product_keys(tmp_path):
     assert "sortBy: registerDateDesc" in client.queries[1]
     assert {record["productId"] for record in saved_targets} == {"W1", "W2"}
     assert {record["reason"] for record in saved_targets} == {"default", "registerDateDesc"}
-    assert not list(config.output.output_dir.glob("ownerclan_*_search-ranks.json"))
+    assert not list((tmp_path / "ownerclan_API" / "data" / "processed").glob("ownerclan_*_search-ranks.json"))
 
 
 def test_category_collection_refreshes_leaf_cache_and_saves_products(tmp_path):
@@ -240,9 +240,10 @@ def test_collect_details_saves_products_to_postgres_without_json_outputs(tmp_pat
     assert saved_products
     assert all("raw" not in product for product in saved_products)
     assert not (config.output.state_dir / "latest-products.json").exists()
-    assert not list(config.output.output_dir.glob("ownerclan_*_product-snapshots.json"))
-    assert not list((config.output.output_dir.parent / "raw").glob("ownerclan_*_raw.json"))
-    assert not list((config.output.output_dir.parent / "history").glob("ownerclan_*_product-history.json"))
+    data_dir = tmp_path / "ownerclan_API" / "data"
+    assert not list((data_dir / "processed").glob("ownerclan_*_product-snapshots.json"))
+    assert not list((data_dir / "raw").glob("ownerclan_*_raw.json"))
+    assert not list((data_dir / "history").glob("ownerclan_*_product-history.json"))
 
 
 def test_collect_details_resumes_from_saved_batch_index(tmp_path):
@@ -343,6 +344,56 @@ def test_incremental_failure_does_not_update_state(tmp_path):
     assert not (config.output.state_dir / "incremental-state.json").exists()
 
 
+def test_parallel_category_collection_uses_one_shared_rate_limiter(tmp_path, monkeypatch):
+    import ownerclan_API.workflows.collect_by_categories as category_module
+
+    rate_limiter_ids = []
+
+    class EmptyClient:
+        def graphql(self, query):
+            return {
+                "allItems": {
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    "edges": [],
+                }
+            }
+
+    def fake_make_client(project_root, config, *, rate_limiter=None):
+        rate_limiter_ids.append(id(rate_limiter))
+        return EmptyClient()
+
+    monkeypatch.setattr(
+        category_module,
+        "load_or_refresh_leaf_categories",
+        lambda *args, **kwargs: [{"key": "C1"}, {"key": "C2"}],
+    )
+    monkeypatch.setattr(category_module, "make_client", fake_make_client)
+    monkeypatch.setattr(category_module, "save_product_raw_samples_if_enabled", lambda **kwargs: 0)
+    monkeypatch.setattr(category_module, "save_product_snapshots_if_enabled", lambda **kwargs: 0)
+
+    result = collect_by_categories_parallel(tmp_path, _config(tmp_path), category_workers=2)
+
+    assert result["failureCount"] == 0
+    assert len(rate_limiter_ids) >= 2
+    assert len(set(rate_limiter_ids)) == 1
+
+
+def test_parallel_category_collection_reports_rate_limit_failure(tmp_path, monkeypatch):
+    import ownerclan_API.workflows.collect_by_categories as category_module
+
+    class RateLimitedClient:
+        def graphql(self, query):
+            raise OwnerclanGraphQLError([{"message": "Too many requests."}])
+
+    monkeypatch.setattr(category_module, "load_or_refresh_leaf_categories", lambda *args, **kwargs: [{"key": "C1"}])
+    monkeypatch.setattr(category_module, "make_client", lambda *args, **kwargs: RateLimitedClient())
+
+    result = collect_by_categories_parallel(tmp_path, _config(tmp_path), category_workers=2)
+
+    assert result["failureCount"] == 1
+    assert result["rateLimitFailureCount"] == 1
+
+
 def test_ownerclan_run_waits_and_restarts_after_rate_limit(tmp_path):
     import ownerclan_API.workflows.main as main_module
 
@@ -361,7 +412,6 @@ request:
   retry_after_max_seconds: 1
 output:
   category_cache_path: ownerclan_API/data/state/categories.json
-  output_dir: ownerclan_API/data/processed
   state_dir: ownerclan_API/data/state
   log_dir: ownerclan_API/data/logs
 timezone: Asia/Seoul
@@ -422,6 +472,81 @@ timezone: Asia/Seoul
 
     assert sleeps == [300]
     assert collect_refresh_args == [True, False]
+    assert result["categoryCollection"]["failureCount"] == 0
+
+
+def test_ownerclan_run_restarts_after_non_rate_limit_failure(tmp_path):
+    import ownerclan_API.workflows.main as main_module
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+environment: production
+discovery:
+  keyword_file: ownerclan_API/config/keywords.txt
+incremental:
+  page_size: 1000
+request:
+  interval_seconds: 0
+  timeout_seconds: 10
+  max_retries: 0
+  retry_after_max_seconds: 1
+output:
+  category_cache_path: ownerclan_API/data/state/categories.json
+  state_dir: ownerclan_API/data/state
+  log_dir: ownerclan_API/data/logs
+timezone: Asia/Seoul
+""".strip(),
+        encoding="utf-8",
+    )
+
+    collect_calls = []
+    sleeps = []
+
+    def fake_collect_by_categories(*args, **kwargs):
+        collect_calls.append(kwargs["refresh_categories"])
+        if len(collect_calls) == 1:
+            return {
+                "categoryCount": 1,
+                "pageCount": 657,
+                "successCount": 276048,
+                "trackedCount": 0,
+                "failureCount": 1,
+                "rateLimitFailureCount": 0,
+            }
+        return {
+            "categoryCount": 1,
+            "pageCount": 1,
+            "successCount": 1000,
+            "trackedCount": 0,
+            "failureCount": 0,
+            "rateLimitFailureCount": 0,
+        }
+
+    def fake_sync_incremental(*args, **kwargs):
+        return dict(main_module.EMPTY_INCREMENTAL_RESULT)
+
+    original_collect = main_module.collect_by_categories
+    original_sync = main_module.sync_incremental
+    original_sleep = main_module.time.sleep
+    main_module.collect_by_categories = fake_collect_by_categories
+    main_module.sync_incremental = fake_sync_incremental
+    main_module.time.sleep = lambda seconds: sleeps.append(seconds)
+    try:
+        result = main_module.run(
+            tmp_path,
+            config_path,
+            refresh_categories=True,
+            failure_retry_seconds=7,
+            max_failure_restarts=2,
+        )
+    finally:
+        main_module.collect_by_categories = original_collect
+        main_module.sync_incremental = original_sync
+        main_module.time.sleep = original_sleep
+
+    assert sleeps == [7]
+    assert collect_calls == [True, False]
     assert result["categoryCollection"]["failureCount"] == 0
 
 
@@ -579,7 +704,6 @@ def test_ownerclan_free_shipping_is_preserved_from_shipping_fields():
 def _config(tmp_path: Path):
     api_dir = tmp_path / "ownerclan_API"
     data_dir = api_dir / "data"
-    output_dir = data_dir / "processed"
     state_dir = data_dir / "state"
     log_dir = data_dir / "logs"
     api_dir.mkdir(exist_ok=True)
@@ -591,7 +715,7 @@ def _config(tmp_path: Path):
         details=DetailsConfig(batch_size=2),
         incremental=IncrementalConfig(page_size=2, overlap_minutes=120, include_item_histories=False),
         request=RequestConfig(interval_seconds=0, timeout_seconds=10, max_retries=0, retry_after_max_seconds=1),
-        output=OutputConfig(state_dir / "categories.json", output_dir, state_dir, log_dir, 3),
+        output=OutputConfig(state_dir / "categories.json", state_dir, log_dir, 3),
         timezone="Asia/Seoul",
     )
 

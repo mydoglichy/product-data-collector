@@ -9,7 +9,7 @@ from typing import Any
 
 import requests
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -35,6 +35,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--duration", type=float, default=60.0, help="Probe duration in seconds.")
     parser.add_argument("--timeout", type=float, default=None, help="Override request timeout in seconds.")
     parser.add_argument("--quiet", action="store_true", help="Only print start, rate-limit, error, and summary events.")
+    parser.add_argument(
+        "--max-errors",
+        type=int,
+        default=20,
+        help="Stop after this many non-rate-limit errors. Use 0 to disable.",
+    )
     parser.add_argument(
         "--continue-after-limit",
         action="store_true",
@@ -97,8 +103,11 @@ def main(argv: list[str] | None = None) -> int:
             first_rate_limit = result
             if not args.continue_after_limit:
                 break
+        if args.max_errors > 0 and _non_rate_limit_errors(results) >= args.max_errors:
+            break
 
-        next_at += interval
+        # Do not send catch-up bursts after slow responses or timeouts.
+        next_at = max(next_at + interval, time.monotonic() + interval)
 
     summary = summarize(results, started, first_rate_limit)
     print(json.dumps({"event": "summary", **summary}, ensure_ascii=False), flush=True)
@@ -126,14 +135,19 @@ def send_probe(session: requests.Session, endpoint: str, token: str, timeout: fl
     payload = parse_json(response)
     errors = payload.get("errors") if isinstance(payload, dict) else None
     error_text = summarize_errors(errors)
-    rate_limited = response.status_code == 429 or looks_like_rate_limit(error_text)
+    retry_after = response.headers.get("Retry-After")
+    rate_limited = (
+        response.status_code == 429
+        or looks_like_rate_limit(error_text)
+        or (response.status_code in {502, 503, 504} and retry_after is not None)
+    )
     ok = response.status_code < 400 and not errors
     return {
         "ok": ok,
         "status": response.status_code,
         "rateLimited": rate_limited,
         "latencyMs": round((time.monotonic() - started) * 1000, 1),
-        "retryAfter": response.headers.get("Retry-After"),
+        "retryAfter": retry_after,
         "error": error_text or None,
     }
 
@@ -161,6 +175,10 @@ def summarize_errors(errors: Any) -> str:
 def looks_like_rate_limit(text: str) -> bool:
     lowered = text.lower()
     return any(term in lowered for term in ("too many requests", "rate limit", "quota"))
+
+
+def _non_rate_limit_errors(results: list[dict[str, Any]]) -> int:
+    return sum(1 for result in results if not result["ok"] and not result["rateLimited"])
 
 
 def summarize(
