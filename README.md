@@ -29,7 +29,7 @@
 - `product_raw_samples`: 디버깅용 raw 샘플
 - `product_search_ranks`: 순위 의미가 있는 discovery/search 이력
 
-자세한 컬럼 의미는 `DB_FIELD_SPEC.md`, 저장 흐름은 `DATA_STORAGE_SCHEMA.md`를 기준으로 확인합니다.
+자세한 컬럼 의미는 `docs/schema/DB_FIELD_SPEC.md`, 저장 흐름은 `docs/schema/DATA_STORAGE_SCHEMA.md`를 기준으로 확인합니다.
 
 ## 실행
 
