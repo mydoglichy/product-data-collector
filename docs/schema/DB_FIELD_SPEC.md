@@ -1,6 +1,6 @@
 # DB 필드 명세
 
-스키마 생성과 기존 DB 보강은 [postgres_storage.py](postgres_storage.py)의 `init_schema()`가 담당한다.
+스키마 생성과 기존 DB 보강은 [postgres_storage.py](../../postgres_storage.py)의 `init_schema()`가 담당한다.
 
 ## `products`
 
@@ -131,6 +131,35 @@ Index: `(product_id, changed_at)`
 `rank`는 페이지 내 순번이 아니라 전체 결과 기준 순위이며 `(currentPage - 1) * itemsPerPage + 페이지 내 순번`으로 계산한다. rank가 없는 데이터에는 `0`을 사용하지 않고 저장하지 않는다.
 
 Unique: `(platform, collected_at, keyword, category_code, market, sort, external_product_id, rank)`. 순위 이력은 상품번호 단독 unique가 아니며, 같은 상품도 다른 수집 시각, keyword, category, market, sort 조건에서 각각 보존된다.
+
+## `product_discovery_targets`
+
+상세 수집 대상으로 재사용할 상품 ID를 저장한다. 도매꾹/도매매 discovery와 오너클랜 keyword discovery가 이 테이블에 쓰고, 상세 수집 workflow가 `platform`, `active` 기준으로 읽는다.
+
+| 컬럼 | 타입 | Null | 설명 |
+| --- | --- | --- | --- |
+| `id` | `BIGSERIAL` | No | PK |
+| `platform` | `TEXT` | No | 수집 플랫폼. 예: `ownerclan`, `domeggook` |
+| `external_product_id` | `TEXT` | No | 플랫폼 원본 상품 ID |
+| `active` | `BOOLEAN` | No | 상세 수집 대상 포함 여부. 기본 `true` |
+| `first_discovered_at` | `TIMESTAMPTZ` | No | 최초 발견 시각 |
+| `last_discovered_at` | `TIMESTAMPTZ` | No | 마지막 발견 시각 |
+| `keyword` | `TEXT` | Yes | 발견에 사용한 keyword |
+| `category_code` | `TEXT` | Yes | 발견에 사용한 category code |
+| `category_name` | `TEXT` | Yes | 발견에 사용한 category name |
+| `market` | `TEXT` | Yes | 발견에 사용한 market |
+| `reason` | `TEXT` | Yes | 발견 사유 또는 sort/reason |
+| `payload` | `JSONB` | No | 발견 record 원본 |
+| `created_at` | `TIMESTAMPTZ` | No | row 생성 시각 |
+| `updated_at` | `TIMESTAMPTZ` | No | row 갱신 시각 |
+
+Unique: `(platform, external_product_id)`
+
+저장 규칙:
+
+- 같은 `(platform, external_product_id)`가 이미 있으면 새 row를 만들지 않고 `last_discovered_at`, discovery context, `payload`, `active`, `updated_at`을 갱신한다.
+- 같은 저장 호출 안에서 중복된 상품 ID는 한 번만 처리한다.
+- PostgreSQL 저장이 꺼져 있으면 상세 수집 대상 목록도 비어 있게 된다.
 
 ## 스키마 보강
 
