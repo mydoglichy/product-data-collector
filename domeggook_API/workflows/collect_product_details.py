@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 
 from ..api.client import DomeggookApiError, DomeggookClient, create_domeggook_client
@@ -29,6 +30,7 @@ def collect_details(
     config: DomeggookConfig,
     *,
     product_limit: int | None = None,
+    deadline_monotonic: float | None = None,
     dry_run: bool = False,
     client: DomeggookClient | None = None,
 ) -> dict[str, int]:
@@ -47,8 +49,23 @@ def collect_details(
     failures: list[dict[str, object]] = []
     raw_remaining = _raw_remaining(state, config.details.raw_sample_limit)
     success_count = 0
+    stopped_on_runtime_limit = False
 
     for index in range(start_index, len(product_ids), config.details.batch_size):
+        if _deadline_reached(deadline_monotonic):
+            stopped_on_runtime_limit = True
+            if not dry_run:
+                save_state(
+                    state_path,
+                    {
+                        "runCollectedAt": collected_at,
+                        "trackedListHash": list_hash,
+                        "nextIndex": index,
+                        "lastCompletedProductId": state.get("lastCompletedProductId"),
+                        "rawRemaining": raw_remaining,
+                    },
+                )
+            break
         batch = product_ids[index : index + config.details.batch_size]
         try:
             payload = client.get_item_view(batch)
@@ -94,13 +111,14 @@ def collect_details(
                 },
             )
 
-    if not dry_run and not failures:
+    if not dry_run and not failures and not stopped_on_runtime_limit:
         clear_state(state_path)
 
     return {
         "trackedCount": len(product_ids),
         "successCount": success_count,
         "failureCount": len(failures),
+        "runtimeLimitReached": int(stopped_on_runtime_limit),
     }
 
 
@@ -160,6 +178,10 @@ def _without_raw(product: dict[str, object]) -> dict[str, object]:
     result = dict(product)
     result.pop("raw", None)
     return result
+
+
+def _deadline_reached(deadline_monotonic: float | None) -> bool:
+    return deadline_monotonic is not None and time.monotonic() >= deadline_monotonic
 
 
 def main(argv: list[str] | None = None) -> int:
