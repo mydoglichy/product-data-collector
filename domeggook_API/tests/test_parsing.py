@@ -142,6 +142,25 @@ def test_numeric_detail_strings_are_cast_for_db_ready_fields():
     assert product["shipping"]["averageShippingDays"] == 1.5
 
 
+def test_detail_parser_maps_resale_prices():
+    payload = {
+        "domeggook": {
+            "item": [
+                {
+                    "no": "46451426",
+                    "price": {"resale": {"minimum": 1160, "Recommand": 2920}},
+                }
+            ]
+        }
+    }
+
+    products, failures = parse_detail_products(payload, "2026-08-22T09:00:00+09:00")
+
+    assert failures == []
+    assert products[0]["prices"]["resaleMinimumPrice"] == 1160
+    assert products[0]["prices"]["resaleRecommendedPrice"] == 2920
+
+
 def test_detail_item_level_error_does_not_drop_batch():
     payload = {
         "domeggook": {

@@ -18,7 +18,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from numeric_utils import parse_decimal
-from product_history import comparable_state, external_product_id, fingerprint_state, normalize_current_product
+from product_history import comparable_state, external_product_id, normalize_current_product
 from shipping_fees import parse_shipping_fee
 
 
@@ -230,14 +230,25 @@ def init_schema(connection: Connection[Any]) -> None:
             product_url TEXT NULL,
             image_url TEXT NULL,
             backup_image_url TEXT NULL,
-            current_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-            comparable_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-            comparable_fingerprint CHAR(64) NOT NULL,
+            status TEXT NULL,
+            seller_external_id TEXT NULL,
+            seller_nickname TEXT NULL,
+            seller_type TEXT NULL,
+            seller_grade TEXT NULL,
+            seller_excellent_seller BOOLEAN NULL,
+            seller_average_satisfaction TEXT NULL,
+            seller_review_count NUMERIC(18, 2) NULL,
             first_seen_at TIMESTAMPTZ NOT NULL,
             last_collected_at TIMESTAMPTZ NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             UNIQUE (platform, external_product_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            name TEXT PRIMARY KEY,
+            applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
         """,
         """
@@ -330,6 +341,17 @@ def init_schema(connection: Connection[Any]) -> None:
         )
         """,
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS backup_image_url TEXT NULL",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS status TEXT NULL",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS seller_external_id TEXT NULL",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS seller_nickname TEXT NULL",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS seller_type TEXT NULL",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS seller_grade TEXT NULL",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS seller_excellent_seller BOOLEAN NULL",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS seller_average_satisfaction TEXT NULL",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS seller_review_count NUMERIC(18, 2) NULL",
+        "ALTER TABLE products DROP COLUMN IF EXISTS current_payload",
+        "ALTER TABLE products DROP COLUMN IF EXISTS comparable_payload",
+        "ALTER TABLE products DROP COLUMN IF EXISTS comparable_fingerprint",
         "ALTER TABLE product_search_ranks ADD COLUMN IF NOT EXISTS keyword TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE product_search_ranks ADD COLUMN IF NOT EXISTS category_code TEXT NOT NULL DEFAULT ''",
         "UPDATE product_search_ranks SET keyword = '' WHERE keyword IS NULL",
@@ -409,7 +431,9 @@ def init_schema(connection: Connection[Any]) -> None:
                         ('dome', 'current_supply', 'domeCurrentSupplyPrice'),
                         ('supply', 'current_supply', 'supplyCurrentSupplyPrice'),
                         ('retail', 'minimum_retail', 'minimumRetailPrice'),
-                        ('retail', 'recommended_retail', 'recommendedRetailPrice')
+                        ('retail', 'recommended_retail', 'recommendedRetailPrice'),
+                        ('resale', 'minimum', 'resaleMinimumPrice'),
+                        ('resale', 'recommended', 'resaleRecommendedPrice')
                 ) AS v(market, price_type, payload_key)
                 WHERE pp.market = 'default'
                   AND pp.payload ? v.payload_key
@@ -552,13 +576,16 @@ def init_schema(connection: Connection[Any]) -> None:
             product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
             changed_at TIMESTAMPTZ NOT NULL,
             change_type TEXT NOT NULL,
-            before_fingerprint CHAR(64) NULL,
-            after_fingerprint CHAR(64) NOT NULL,
-            before_payload JSONB NULL,
-            after_payload JSONB NOT NULL,
+            changed_fields TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
         """,
+        "ALTER TABLE product_change_history ADD COLUMN IF NOT EXISTS changed_fields TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]",
+        "ALTER TABLE product_change_history DROP COLUMN IF EXISTS before_payload",
+        "ALTER TABLE product_change_history DROP COLUMN IF EXISTS after_payload",
+        "ALTER TABLE product_change_history DROP COLUMN IF EXISTS before_fingerprint",
+        "ALTER TABLE product_change_history DROP COLUMN IF EXISTS after_fingerprint",
+        "DROP TABLE IF EXISTS product_latest_fields",
         "CREATE INDEX IF NOT EXISTS idx_products_platform_external_id ON products(platform, external_product_id)",
         "CREATE INDEX IF NOT EXISTS idx_products_last_collected_at ON products(last_collected_at)",
         "CREATE INDEX IF NOT EXISTS idx_product_change_history_product_changed_at ON product_change_history(product_id, changed_at)",
@@ -572,7 +599,23 @@ def init_schema(connection: Connection[Any]) -> None:
     with connection.cursor() as cursor:
         for statement in statements:
             cursor.execute(statement)
+    _apply_one_time_migrations(connection)
     connection.commit()
+
+
+def _apply_one_time_migrations(connection: Connection[Any]) -> None:
+    migration_name = "drop_payload_based_change_history_20260904"
+    applied = connection.execute(
+        "SELECT 1 FROM schema_migrations WHERE name = %s",
+        (migration_name,),
+    ).fetchone()
+    if applied:
+        return
+    connection.execute("DELETE FROM product_change_history")
+    connection.execute(
+        "INSERT INTO schema_migrations (name) VALUES (%s)",
+        (migration_name,),
+    )
 
 
 def save_product_snapshots(
@@ -808,15 +851,31 @@ def _positive_int(value: Any) -> int | None:
 def _save_snapshot(connection: Connection[Any], row: dict[str, Any]) -> None:
     existing = connection.execute(
         """
-        SELECT id, comparable_fingerprint, comparable_payload, first_seen_at
+        SELECT
+            id,
+            first_seen_at,
+            product_name,
+            product_url,
+            image_url,
+            backup_image_url,
+            status,
+            seller_external_id,
+            seller_nickname,
+            seller_type,
+            seller_grade,
+            seller_excellent_seller,
+            seller_average_satisfaction,
+            seller_review_count
         FROM products
         WHERE platform = %s AND external_product_id = %s
         """,
         (row["platform"], row["external_product_id"]),
     ).fetchone()
-    before_fingerprint = existing.get("comparable_fingerprint") if existing else None
-    before_payload = existing.get("comparable_payload") if existing else None
     first_seen_at = existing.get("first_seen_at") if existing else row["collected_at"]
+    seller = row["seller"]
+    previous_values = _previous_snapshot_values(connection, existing) if existing else {}
+    current_values = _current_snapshot_values(row)
+    changed_fields = _changed_field_paths(previous_values, current_values)
 
     product = connection.execute(
         """
@@ -827,22 +886,32 @@ def _save_snapshot(connection: Connection[Any], row: dict[str, Any]) -> None:
             product_url,
             image_url,
             backup_image_url,
-            current_payload,
-            comparable_payload,
-            comparable_fingerprint,
+            status,
+            seller_external_id,
+            seller_nickname,
+            seller_type,
+            seller_grade,
+            seller_excellent_seller,
+            seller_average_satisfaction,
+            seller_review_count,
             first_seen_at,
             last_collected_at,
             updated_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
         ON CONFLICT (platform, external_product_id) DO UPDATE SET
             product_name = EXCLUDED.product_name,
             product_url = EXCLUDED.product_url,
             image_url = EXCLUDED.image_url,
             backup_image_url = EXCLUDED.backup_image_url,
-            current_payload = EXCLUDED.current_payload,
-            comparable_payload = EXCLUDED.comparable_payload,
-            comparable_fingerprint = EXCLUDED.comparable_fingerprint,
+            status = EXCLUDED.status,
+            seller_external_id = EXCLUDED.seller_external_id,
+            seller_nickname = EXCLUDED.seller_nickname,
+            seller_type = EXCLUDED.seller_type,
+            seller_grade = EXCLUDED.seller_grade,
+            seller_excellent_seller = EXCLUDED.seller_excellent_seller,
+            seller_average_satisfaction = EXCLUDED.seller_average_satisfaction,
+            seller_review_count = EXCLUDED.seller_review_count,
             last_collected_at = EXCLUDED.last_collected_at,
             updated_at = now()
         RETURNING id
@@ -854,9 +923,14 @@ def _save_snapshot(connection: Connection[Any], row: dict[str, Any]) -> None:
             row["product_url"],
             row["image_url"],
             row["backup_image_url"],
-            Jsonb(row["current_payload"]),
-            Jsonb(row["comparable_payload"]),
-            row["comparable_fingerprint"],
+            row["status"],
+            seller["id"],
+            seller["nickname"],
+            seller["type"],
+            seller["grade"],
+            seller["excellent_seller"],
+            seller["average_satisfaction"],
+            seller["review_count"],
             first_seen_at,
             row["collected_at"],
         ),
@@ -867,30 +941,134 @@ def _save_snapshot(connection: Connection[Any], row: dict[str, Any]) -> None:
     _insert_inventory(connection, product_id, row)
     _insert_shipping(connection, product_id, row)
 
-    if before_fingerprint != row["comparable_fingerprint"]:
+    if changed_fields:
         connection.execute(
             """
             INSERT INTO product_change_history (
                 product_id,
                 changed_at,
                 change_type,
-                before_fingerprint,
-                after_fingerprint,
-                before_payload,
-                after_payload
+                changed_fields
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s)
             """,
             (
                 product_id,
                 row["collected_at"],
-                "initial" if before_fingerprint is None else "update",
-                before_fingerprint,
-                row["comparable_fingerprint"],
-                Jsonb(before_payload) if before_payload is not None else None,
-                Jsonb(row["comparable_payload"]),
+                "initial" if existing is None else "update",
+                changed_fields,
             ),
         )
+
+
+def _changed_field_paths(previous: dict[str, str], current: dict[str, str]) -> list[str]:
+    return sorted(
+        field_path
+        for field_path in set(previous) | set(current)
+        if previous.get(field_path) != current.get(field_path)
+    )
+
+
+def _previous_snapshot_values(connection: Connection[Any], existing: dict[str, Any]) -> dict[str, str]:
+    product_id = existing["id"]
+    values = _product_master_values(existing)
+    price_rows = connection.execute(
+        """
+        SELECT market, price_type, amount
+        FROM product_prices
+        WHERE product_id = %s
+          AND collected_at = (
+              SELECT max(collected_at)
+              FROM product_prices
+              WHERE product_id = %s
+          )
+        """,
+        (product_id, product_id),
+    ).fetchall()
+    for price in price_rows:
+        values[f"prices.{price['market']}.{price['price_type']}"] = _stable_value_text(price["amount"])
+
+    inventory = connection.execute(
+        """
+        SELECT stock_quantity
+        FROM product_inventory
+        WHERE product_id = %s
+        ORDER BY collected_at DESC
+        LIMIT 1
+        """,
+        (product_id,),
+    ).fetchone()
+    if inventory:
+        values["inventory.stockQuantity"] = _stable_value_text(inventory["stock_quantity"])
+
+    shipping_rows = connection.execute(
+        """
+        SELECT market, fee, shipping_type, is_free_shipping
+        FROM product_shipping_fees
+        WHERE product_id = %s
+          AND collected_at = (
+              SELECT max(collected_at)
+              FROM product_shipping_fees
+              WHERE product_id = %s
+          )
+        """,
+        (product_id, product_id),
+    ).fetchall()
+    for shipping in shipping_rows:
+        prefix = f"shipping.{shipping['market']}"
+        values[f"{prefix}.fee"] = _stable_value_text(shipping["fee"])
+        values[f"{prefix}.shippingType"] = _stable_value_text(shipping["shipping_type"])
+        values[f"{prefix}.isFreeShipping"] = _stable_value_text(shipping["is_free_shipping"])
+    return values
+
+
+def _current_snapshot_values(row: dict[str, Any]) -> dict[str, str]:
+    values = _product_master_values(
+        {
+            "product_name": row["product_name"],
+            "product_url": row["product_url"],
+            "image_url": row["image_url"],
+            "backup_image_url": row["backup_image_url"],
+            "status": row["status"],
+            "seller_external_id": row["seller"]["id"],
+            "seller_nickname": row["seller"]["nickname"],
+            "seller_type": row["seller"]["type"],
+            "seller_grade": row["seller"]["grade"],
+            "seller_excellent_seller": row["seller"]["excellent_seller"],
+            "seller_average_satisfaction": row["seller"]["average_satisfaction"],
+            "seller_review_count": row["seller"]["review_count"],
+        }
+    )
+    for price in row["price_rows"]:
+        values[f"prices.{price['market']}.{price['price_type']}"] = _stable_value_text(price["amount"])
+    if _has_inventory_snapshot(row):
+        values["inventory.stockQuantity"] = _stable_value_text(row["stock_quantity"])
+    for shipping in row["shipping_rows"]:
+        if not _has_shipping_snapshot(shipping, row):
+            continue
+        prefix = f"shipping.{shipping['market']}"
+        values[f"{prefix}.fee"] = _stable_value_text(shipping["fee"])
+        values[f"{prefix}.shippingType"] = _stable_value_text(shipping["shipping_type"])
+        values[f"{prefix}.isFreeShipping"] = _stable_value_text(row["is_free_shipping"])
+    return values
+
+
+def _product_master_values(row: dict[str, Any]) -> dict[str, str]:
+    fields = (
+        "product_name",
+        "product_url",
+        "image_url",
+        "backup_image_url",
+        "status",
+        "seller_external_id",
+        "seller_nickname",
+        "seller_type",
+        "seller_grade",
+        "seller_excellent_seller",
+        "seller_average_satisfaction",
+        "seller_review_count",
+    )
+    return {field: _stable_value_text(row.get(field)) for field in fields}
 
 
 def _insert_price(connection: Connection[Any], product_id: int, row: dict[str, Any]) -> None:
@@ -1007,6 +1185,7 @@ def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> 
     shipping = _section_or_empty(comparable, current, "shipping")
     shipping_payload = _shipping_payload(comparable, current)
     shipping_rows = _shipping_rows(platform, shipping_payload)
+    seller = _seller_row(_object_or_empty(current.get("seller")))
     return {
         "platform": platform,
         "external_product_id": external_id,
@@ -1015,9 +1194,8 @@ def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> 
         "product_url": _first_text(current, "productUrl", "affiliateUrl", "url"),
         "image_url": _first_text(current, "imageUrl", "productImage"),
         "backup_image_url": _first_text(current, "backupImageUrl"),
-        "current_payload": current,
-        "comparable_payload": comparable,
-        "comparable_fingerprint": fingerprint_state(comparable),
+        "status": _text_or_none(current.get("status")),
+        "seller": seller,
         "prices_payload": prices,
         "inventory_payload": inventory,
         "shipping_payload": shipping_payload,
@@ -1029,6 +1207,22 @@ def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> 
         "shipping_rows": shipping_rows,
         "is_free_shipping": _bool_or_none(_first_available_value(shipping, current, "isFreeShipping")),
     }
+
+
+def _seller_row(seller: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": _text_or_none(seller.get("id")),
+        "nickname": _text_or_none(seller.get("nickname")),
+        "type": _text_or_none(seller.get("type")),
+        "grade": _text_or_none(seller.get("grade")),
+        "excellent_seller": _bool_or_none(seller.get("excellentSeller")),
+        "average_satisfaction": _text_or_none(seller.get("averageSatisfaction")),
+        "review_count": _decimal_or_none(seller.get("reviewCount")),
+    }
+
+
+def _stable_value_text(value: Any) -> str:
+    return json.dumps(_json_safe(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _parse_datetime(value: str) -> datetime:
@@ -1157,6 +1351,22 @@ def _price_rows(platform: str, prices: dict[str, Any], current: dict[str, Any]) 
                 "market": "retail",
                 "price_type": "recommended_retail",
                 "amount": _decimal_or_none(prices.get("recommendedRetailPrice")),
+            }
+        )
+    if _has_value(prices.get("resaleMinimumPrice")):
+        rows.append(
+            {
+                "market": "resale",
+                "price_type": "minimum",
+                "amount": _decimal_or_none(prices.get("resaleMinimumPrice")),
+            }
+        )
+    if _has_value(prices.get("resaleRecommendedPrice")):
+        rows.append(
+            {
+                "market": "resale",
+                "price_type": "recommended",
+                "amount": _decimal_or_none(prices.get("resaleRecommendedPrice")),
             }
         )
     if _has_value(prices.get("currentSupplyPrice")):
