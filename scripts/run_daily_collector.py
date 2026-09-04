@@ -89,7 +89,7 @@ def _run_platform(args: argparse.Namespace) -> Any:
             dry_run=args.dry_run,
         )
     config = load_coupang_config(PROJECT_ROOT / "coupang_API" / "config" / "config.yaml")
-    return {"exitCode": collect_coupang_once(PROJECT_ROOT, config)}
+    return {"exitCode": collect_coupang_once(PROJECT_ROOT, config, dry_run=args.dry_run)}
 
 
 def _exit_code(platform: str, result: Any) -> int:

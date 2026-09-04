@@ -68,6 +68,18 @@ Docker Compose로 DB와 수집기를 함께 실행:
 docker compose up data-collector
 ```
 
+`data-collector` 서비스는 `scripts/run_collectors.py`를 실행하며 현재 오너클랜과 도매꾹/도매매를 순서대로 수집합니다. 쿠팡은 API 제한 특성이 달라 플랫폼별 일일 수집 명령으로 별도 실행합니다.
+
+운영 wrapper에서 사용하는 선택 환경변수:
+
+```dotenv
+COLLECTOR_LIMIT=
+COLLECTOR_DRY_RUN=false
+OWNERCLAN_REFRESH_CATEGORIES=true
+SKIP_OWNERCLAN=false
+SKIP_DOMEGGOOK=false
+```
+
 개별 모듈 실행:
 
 ```powershell
@@ -83,6 +95,7 @@ python -m coupang_API
 ```powershell
 python -m ownerclan_API --refresh-categories --limit 1 --dry-run
 python -m domeggook_API --limit 1 --dry-run
+python -m coupang_API --dry-run
 ```
 
 ## 테스트
