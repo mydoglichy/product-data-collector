@@ -18,7 +18,7 @@ from postgres_storage import save_product_raw_samples_if_enabled, save_product_s
 LOGGER = logging.getLogger("coupang_API")
 
 
-def collect_once(project_root: Path, config: CollectorConfig) -> int:
+def collect_once(project_root: Path, config: CollectorConfig, *, dry_run: bool = False) -> int:
     access_key, secret_key = load_credentials(project_root)
     client = CoupangPartnersClient(
         access_key=access_key,
@@ -78,7 +78,8 @@ def collect_once(project_root: Path, config: CollectorConfig) -> int:
                     if existing and existing.get("raw") is not None and record.get("raw") is None:
                         record = {**record, "raw": existing["raw"]}
                     collected_products[str(product_id)] = record
-            checkpoint.mark_completed(keyword)
+            if not dry_run:
+                checkpoint.mark_completed(keyword)
             success_keywords.append(keyword)
             LOGGER.info("success keyword=%r products=%d duplicates=%d", keyword, len(unique_records), duplicates)
         except CoupangApiError as exc:
@@ -90,24 +91,25 @@ def collect_once(project_root: Path, config: CollectorConfig) -> int:
 
     ended_at = datetime.now(timezone.utc)
     all_completed = len(checkpoint.completed_keywords.intersection(keywords)) == len(keywords)
-    if all_completed and not failure_keywords:
+    if all_completed and not failure_keywords and not dry_run:
         checkpoint.clear()
     collected_at = ended_at.isoformat().replace("+00:00", "Z")
-    save_product_raw_samples_if_enabled(
-        project_root=project_root,
-        platform="coupang",
-        collected_at=collected_at,
-        products=collected_products.values(),
-        limit=config.raw_sample_limit,
-        logger=LOGGER,
-    )
-    save_product_snapshots_if_enabled(
-        project_root=project_root,
-        platform="coupang",
-        collected_at=collected_at,
-        products=(_without_raw(product) for product in collected_products.values()),
-        logger=LOGGER,
-    )
+    if not dry_run:
+        save_product_raw_samples_if_enabled(
+            project_root=project_root,
+            platform="coupang",
+            collected_at=collected_at,
+            products=collected_products.values(),
+            limit=config.raw_sample_limit,
+            logger=LOGGER,
+        )
+        save_product_snapshots_if_enabled(
+            project_root=project_root,
+            platform="coupang",
+            collected_at=collected_at,
+            products=(_without_raw(product) for product in collected_products.values()),
+            logger=LOGGER,
+        )
 
     summary = {
         "runStartedAt": started_at.isoformat().replace("+00:00", "Z"),
@@ -139,7 +141,7 @@ def collect_once(project_root: Path, config: CollectorConfig) -> int:
     if failure_keywords:
         LOGGER.info("failed keywords=%s", ", ".join(failure_keywords))
 
-    return 1 if failure_keywords and not success_keywords else 0
+    return 1 if failure_keywords else 0
 
 
 def _without_raw(product: dict[str, object]) -> dict[str, object]:
@@ -151,6 +153,7 @@ def _without_raw(product: dict[str, object]) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Collect Coupang Partners keyword product search data.")
     parser.add_argument("--config", default=None, help="Path to config.yaml. Defaults to coupang_API/config/config.yaml.")
+    parser.add_argument("--dry-run", action="store_true", help="Call API but do not write state or database rows.")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -160,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
     project_root = find_project_root(Path.cwd())
     config_path = Path(args.config) if args.config else project_root / "coupang_API" / "config" / "config.yaml"
     config = load_config(config_path)
-    return collect_once(project_root, config)
+    return collect_once(project_root, config, dry_run=args.dry_run)
 
 
 def find_project_root(start: Path) -> Path:
