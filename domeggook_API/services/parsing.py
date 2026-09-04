@@ -68,6 +68,7 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
     dome = _first_dict(item, ("dome", "domeggook", "domestic", "marketDome"))
     supply = _first_dict(item, ("supply", "domeme", "marketSupply"))
     price_labeled = _first_dict(price, ("labeledPrice",))
+    price_resale = _first_dict(price, ("resale",))
     deli_dome = _first_dict(_first_dict(item, ("deli",)), ("dome",))
     deli_supply = _first_dict(_first_dict(item, ("deli",)), ("supply",))
     seller = _first_dict(item, ("seller", "sellerInfo", "mem", "member"))
@@ -103,6 +104,8 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
             "supplyOriginalSupplyPrice": _number(_get(supply, "orgPrice", "originalPrice", "beforeDiscountPrice")),
             "minimumRetailPrice": _number(_coalesce(_get(price_labeled, "low", "minimum"), _get(item, "minPrice", "minimumRetailPrice", "lowPrice"))),
             "recommendedRetailPrice": _number(_coalesce(_get(price_labeled, "recommend", "recommended"), _get(item, "recommendPrice", "recommendedRetailPrice", "recPrice"))),
+            "resaleMinimumPrice": _number(_get(price_resale, "minimum", "minumum")),
+            "resaleRecommendedPrice": _number(_get(price_resale, "Recommand", "recommend", "recommended")),
         },
         "inventory": {
             "stockQuantity": _number(_coalesce(_get(qty, "inventory"), _get(item, "stock", "stockQty", "quantity"))),

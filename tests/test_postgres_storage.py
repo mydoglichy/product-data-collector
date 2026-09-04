@@ -90,10 +90,9 @@ def test_snapshot_row_normalizes_product_for_postgres() -> None:
     assert row["external_product_id"] == "123"
     assert row["image_url"] == "https://img.example/a.jpg"
     assert row["backup_image_url"] == "https://img.example/b.jpg"
-    assert row["current_payload"]["imageUrl"] == "https://img.example/a.jpg"
-    assert row["current_payload"]["backupImageUrl"] == "https://img.example/b.jpg"
-    assert "images" not in row["current_payload"]
-    assert "raw" not in row["current_payload"]
+    assert "current_payload" not in row
+    assert "comparable_payload" not in row
+    assert "comparable_fingerprint" not in row
     assert row["primary_price"] == 12000
 
 
@@ -244,6 +243,7 @@ def test_snapshot_row_splits_domeggook_market_prices_and_shipping() -> None:
                 "supplyCurrentSupplyPrice": 680,
                 "minimumRetailPrice": 900,
                 "recommendedRetailPrice": 1000,
+                "resaleMinimumPrice": 1200,
             },
             "shipping": {
                 "feePayer": "P",
@@ -268,6 +268,7 @@ def test_snapshot_row_splits_domeggook_market_prices_and_shipping() -> None:
         {"market": "supply", "price_type": "current_supply", "amount": 680},
         {"market": "retail", "price_type": "minimum_retail", "amount": 900},
         {"market": "retail", "price_type": "recommended_retail", "amount": 1000},
+        {"market": "resale", "price_type": "minimum", "amount": 1200},
     ]
     assert row["shipping_fee"] is None
     assert row["shipping_rows"][0]["market"] == "dome"
