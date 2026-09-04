@@ -136,6 +136,58 @@ def test_bulk_collector_dry_run_does_not_write_checkpoint_or_postgres(tmp_path, 
     assert saved == {"raw": [], "snapshots": []}
 
 
+def test_bulk_collector_dry_run_preserves_existing_checkpoint(tmp_path, monkeypatch):
+    project_root = tmp_path
+    api_dir = project_root / "coupang_API"
+    (api_dir / "config").mkdir(parents=True)
+    (api_dir / "config" / "keywords.txt").write_text("completed\nnew-keyword\n", encoding="utf-8")
+    (api_dir / "data" / "state").mkdir(parents=True)
+    checkpoint_path = api_dir / "data" / "state" / "product_search_checkpoint.json"
+    checkpoint_payload = {"completedKeywords": ["completed"]}
+    checkpoint_path.write_text(json.dumps(checkpoint_payload, ensure_ascii=False), encoding="utf-8")
+    FakeClient.calls = []
+    FakeClient.failing_keywords = set()
+    monkeypatch.setattr(collector, "load_credentials", lambda root: ("access", "secret"))
+    monkeypatch.setattr(collector, "CoupangPartnersClient", FakeClient)
+    monkeypatch.setattr(collector, "save_product_raw_samples_if_enabled", lambda **kwargs: 1)
+    monkeypatch.setattr(collector, "save_product_snapshots_if_enabled", lambda **kwargs: 1)
+
+    exit_code = collector.collect_once(
+        project_root,
+        collector.CollectorConfig(requests_per_minute=40),
+        dry_run=True,
+    )
+
+    assert exit_code == 0
+    assert [call.keyword for call in FakeClient.calls] == ["new-keyword"]
+    assert json.loads(checkpoint_path.read_text(encoding="utf-8")) == checkpoint_payload
+
+
+def test_bulk_collector_clears_checkpoint_when_only_completed_keywords_remain(tmp_path, monkeypatch):
+    project_root = tmp_path
+    api_dir = project_root / "coupang_API"
+    (api_dir / "config").mkdir(parents=True)
+    (api_dir / "config" / "keywords.txt").write_text("completed\n", encoding="utf-8")
+    (api_dir / "data" / "state").mkdir(parents=True)
+    checkpoint_path = api_dir / "data" / "state" / "product_search_checkpoint.json"
+    checkpoint_path.write_text(
+        json.dumps({"completedKeywords": ["completed"]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    FakeClient.calls = []
+    FakeClient.failing_keywords = set()
+    monkeypatch.setattr(collector, "load_credentials", lambda root: ("access", "secret"))
+    monkeypatch.setattr(collector, "CoupangPartnersClient", FakeClient)
+    monkeypatch.setattr(collector, "save_product_raw_samples_if_enabled", lambda **kwargs: 1)
+    monkeypatch.setattr(collector, "save_product_snapshots_if_enabled", lambda **kwargs: 1)
+
+    exit_code = collector.collect_once(project_root, collector.CollectorConfig(requests_per_minute=40))
+
+    assert exit_code == 0
+    assert FakeClient.calls == []
+    assert not checkpoint_path.exists()
+
+
 def test_bulk_collector_returns_failure_when_any_keyword_fails(tmp_path, monkeypatch):
     project_root = tmp_path
     api_dir = project_root / "coupang_API"

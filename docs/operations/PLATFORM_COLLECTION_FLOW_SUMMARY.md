@@ -22,13 +22,15 @@
 7. raw sample은 설정된 제한 개수만 `product_raw_samples`에 저장합니다.
 8. 상품 master, 가격 snapshot, 배송 snapshot을 PostgreSQL에 저장합니다.
 9. 성공한 keyword를 checkpoint에 기록합니다.
-10. 모든 keyword가 성공하면 checkpoint 파일을 삭제합니다.
+10. `keywords.txt`의 모든 keyword가 checkpoint 완료 상태가 되고 이번 실행 실패가 없으면 checkpoint 파일을 삭제합니다.
+11. 이미 완료된 keyword만 남아 있는 재실행에서도 같은 조건이 만족되므로 checkpoint 파일을 삭제합니다.
 
 ### 제한과 실패 처리
 
 - 현재 설정은 rolling window 기준 40 RPM입니다.
 - HTTP status가 200이어도 JSON 본문의 `rCode`가 `0`이 아니면 실패로 처리합니다.
-- `--dry-run`은 API 호출과 파싱까지 수행하지만 checkpoint, raw sample, 상품 snapshot을 저장하지 않습니다.
+- `--dry-run`은 checkpoint를 읽어서 완료 keyword를 건너뛰지만 checkpoint 파일을 생성, 갱신, 삭제하지 않습니다.
+- `--dry-run`은 API 호출과 파싱까지 수행하지만 raw sample, 상품 snapshot도 저장하지 않습니다.
 - keyword가 하나라도 실패하면 실행 결과를 실패 exit code로 반환합니다.
 
 ## 오너클랜
@@ -50,8 +52,9 @@
 6. 상품 데이터를 공통 구조로 정규화합니다.
 7. 상품 master, 가격 snapshot, 재고 snapshot, 배송비 snapshot을 PostgreSQL에 저장합니다.
 8. 기존 DB 최신값과 현재 정규화 값을 비교해 변경 사항이 있으면 `product_change_history`에 기록합니다.
-9. 전체 카테고리 수집이 끝나면 `sync_incremental`을 이어서 실행합니다.
-10. 증분 수집은 `updatedAt` 기준 변경분을 수집합니다.
+9. 전체 카테고리 수집이 실패 없이 완료되면 같은 실행 안에서 `sync_incremental` 단계가 이어서 실행됩니다.
+10. `sync_incremental`은 `updatedAt` 기준 최근 변경 상품을 추가로 수집합니다.
+11. 카테고리 수집이 실패하면 `sync_incremental`은 실행하지 않고 빈 incremental 결과를 반환합니다.
 
 ### 제한과 재개
 
