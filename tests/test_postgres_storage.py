@@ -6,10 +6,14 @@ import pytest
 
 from postgres_storage import (
     _discovery_target_rows,
+    _history_insert_plans,
+    _history_state,
     _has_inventory_snapshot,
     _has_shipping_snapshot,
+    _product_batch_size,
     _search_rank_rows,
     _snapshot_row,
+    init_schema,
     load_postgres_config,
     save_product_snapshots_if_enabled,
 )
@@ -423,6 +427,140 @@ def test_snapshot_row_does_not_create_supply_shipping_from_dome_fallback() -> No
     assert row["shipping_rows"][0]["payload"]["source_fields"]["pay"] == "P"
 
 
+def test_history_state_stores_full_core_state_after_price_change() -> None:
+    previous = _snapshot_row(
+        "ownerclan",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "price-change",
+            "prices": {"currentSupplyPrice": 1000},
+            "inventory": {"stockQuantity": 5},
+            "shipping": {"fee": 3000, "feeRaw": "3,000", "type": "fixed"},
+            "status": "available",
+        },
+    )
+    current = _snapshot_row(
+        "ownerclan",
+        "2026-08-31T10:00:00Z",
+        {
+            "productId": "price-change",
+            "prices": {"currentSupplyPrice": 1200},
+            "inventory": {"stockQuantity": 5},
+            "shipping": {"fee": 3000, "feeRaw": "3,000", "type": "fixed"},
+            "status": "available",
+        },
+    )
+
+    assert previous is not None
+    assert current is not None
+    plans = _history_insert_plans(
+        [current],
+        {
+            "price-change": {
+                "prices": _history_state(previous)["prices"],
+                "inventory": _history_state(previous)["inventory"],
+                "shipping": _history_state(previous)["shipping"],
+                "status": "available",
+            }
+        },
+    )
+
+    assert len(plans) == 1
+    assert plans[0]["change_type"] == "update"
+    assert "prices.rows" in plans[0]["changed_fields"]
+    assert plans[0]["prices"]["rows"][0]["amount"] == 1200
+    assert plans[0]["inventory"]["stockQuantity"] == 5
+    assert plans[0]["shipping"]["rows"][0]["fee"] == 3000
+
+
+def test_history_plan_skips_basic_info_only_change() -> None:
+    previous = _snapshot_row(
+        "ownerclan",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "display-change",
+            "productName": "old",
+            "prices": {"currentSupplyPrice": 1000},
+            "inventory": {"stockQuantity": 5},
+            "shipping": {"fee": 3000},
+        },
+    )
+    current = _snapshot_row(
+        "ownerclan",
+        "2026-08-31T10:00:00Z",
+        {
+            "productId": "display-change",
+            "productName": "new",
+            "imageUrl": "https://cdn.example/new.jpg",
+            "prices": {"currentSupplyPrice": "1000"},
+            "inventory": {"stockQuantity": "5"},
+            "shipping": {"fee": "3000"},
+        },
+    )
+
+    assert previous is not None
+    assert current is not None
+    plans = _history_insert_plans(
+        [current],
+        {
+            "display-change": {
+                "prices": _history_state(previous)["prices"],
+                "inventory": _history_state(previous)["inventory"],
+                "shipping": _history_state(previous)["shipping"],
+                "status": previous["status"],
+            }
+        },
+    )
+
+    assert plans == []
+
+
+def test_history_plan_creates_initial_row_for_new_product() -> None:
+    row = _snapshot_row(
+        "coupang",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "new-product",
+            "productName": "Sample",
+            "productPrice": 12000,
+            "isFreeShipping": True,
+        },
+    )
+
+    assert row is not None
+    plans = _history_insert_plans([row], {})
+
+    assert len(plans) == 1
+    assert plans[0]["change_type"] == "initial"
+    assert plans[0]["prices"]["rows"][0]["price_type"] == "primary"
+    assert plans[0]["shipping"]["rows"][0]["isFreeShipping"] is True
+
+
+def test_product_batch_size_uses_env_with_default_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("POSTGRES_PRODUCT_BATCH_SIZE", raising=False)
+    assert _product_batch_size(tmp_path) == 1000
+
+    monkeypatch.setenv("POSTGRES_PRODUCT_BATCH_SIZE", "250")
+    assert _product_batch_size(tmp_path) == 250
+
+    monkeypatch.setenv("POSTGRES_PRODUCT_BATCH_SIZE", "0")
+    assert _product_batch_size(tmp_path) == 1000
+
+
+def test_init_schema_drops_legacy_snapshot_tables() -> None:
+    connection = _SchemaConnection()
+
+    init_schema(connection)
+
+    statements = "\n".join(connection.statements)
+    assert "CREATE TABLE IF NOT EXISTS product_prices" not in statements
+    assert "CREATE TABLE IF NOT EXISTS product_inventory" not in statements
+    assert "CREATE TABLE IF NOT EXISTS product_shipping_fees" not in statements
+    assert "DROP TABLE IF EXISTS product_prices" in statements
+    assert "DROP TABLE IF EXISTS product_inventory" in statements
+    assert "DROP TABLE IF EXISTS product_shipping_fees" in statements
+
+
 def test_save_product_snapshots_if_enabled_skips_when_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("POSTGRES_ENABLED", "false")
 
@@ -482,3 +620,38 @@ def test_search_rank_rows_preserve_same_product_for_different_keywords() -> None
 
     assert len(rows) == 2
     assert {row["keyword"] for row in rows} == {"bag", "case"}
+
+
+class _SchemaResult:
+    def fetchone(self):
+        return None
+
+
+class _SchemaCursor:
+    def __init__(self, connection: "_SchemaConnection") -> None:
+        self.connection = connection
+
+    def __enter__(self) -> "_SchemaCursor":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def execute(self, statement: str, params=None) -> None:
+        self.connection.statements.append(statement)
+
+
+class _SchemaConnection:
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+        self.committed = False
+
+    def cursor(self) -> _SchemaCursor:
+        return _SchemaCursor(self)
+
+    def execute(self, statement: str, params=None) -> _SchemaResult:
+        self.statements.append(statement)
+        return _SchemaResult()
+
+    def commit(self) -> None:
+        self.committed = True

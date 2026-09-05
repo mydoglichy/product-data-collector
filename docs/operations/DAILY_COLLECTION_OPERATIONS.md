@@ -1,6 +1,6 @@
 # 일일 수집 운영 문서
 
-매일 자정 전후에 플랫폼별 수집기를 따로 실행해 PostgreSQL에 상품 snapshot을 저장합니다. 이 문서는 `scripts/run_daily_collector.py` 기준 운영값만 설명합니다.
+매일 자정 전후에 플랫폼별 수집기를 따로 실행해 PostgreSQL에 상품 master와 변경된 핵심 history를 저장합니다. 이 문서는 `scripts/run_daily_collector.py` 기준 운영값만 설명합니다.
 
 플랫폼별 실제 순회 방식, RPM/worker, 동적 재개 구현은 [COLLECTION_METHODS.md](COLLECTION_METHODS.md)를 기준으로 봅니다.
 

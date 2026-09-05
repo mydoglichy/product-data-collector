@@ -7,7 +7,7 @@
 | 플랫폼 | 기본 수집 단위 | 순회 방식 | 운영 worker | 운영 속도/예산 | 재개 상태 |
 |---|---|---|---:|---|---|
 | 오너클랜 | 최하위 카테고리의 `allItems` 페이지 | 최하위 카테고리 전체 순회 후 증분 변경분 수집 | 8 | `interval_seconds=0.4`, 전체 약 150 RPM | `category-collection-progress.json`, `incremental-state.json` |
-| 도매꾹/도매매 | 최하위 카테고리 + market + sort + page | discovery로 상품 ID 확보 후 상세 snapshot 수집 | 1 | 분당 120, 시간당 9000, 일당 14000 호출 예산 | `discovery-state.json`, `detail-collection-state.json`, `recent-discovery-state.json` |
+| 도매꾹/도매매 | 최하위 카테고리 + market + sort + page | discovery로 상품 ID 확보 후 상세 상품 상태 수집 | 1 | 분당 120, 시간당 9000, 일당 14000 호출 예산 | `discovery-state.json`, `detail-collection-state.json`, `recent-discovery-state.json` |
 | 쿠팡 | keyword 1개당 Search API 1회 | `keywords.txt`를 순차 조회 | 1 | rolling window 40 RPM | `product_search_checkpoint.json` |
 
 ## 오너클랜
@@ -74,7 +74,7 @@ worker는 서로 다른 카테고리를 동시에 맡습니다. 같은 카테고
 7. 발견한 상품 ID는 PostgreSQL `product_discovery_targets`에 저장합니다.
 8. `ha`, `rd`처럼 순위 의미가 있는 sort만 `product_search_ranks`에 저장합니다. `da`는 최근 등록/수정일 기준이라 ranking history로 저장하지 않습니다.
 
-상세 수집은 `product_discovery_targets`에서 active 상품 ID를 읽고 `getItemView`를 batch size 100으로 호출해 상품 snapshot을 저장합니다.
+상세 수집은 `product_discovery_targets`에서 active 상품 ID를 읽고 `getItemView`를 batch size 100으로 호출해 상품 master와 변경된 핵심 history를 저장합니다.
 
 ### 운영 모드
 
