@@ -12,7 +12,7 @@ python scripts\run_daily_collector.py --platform coupang --dry-run
 ```
 
 `config/keywords.txt`의 keyword를 순서대로 조회하고, keyword별 성공 여부를 checkpoint에 기록합니다.
-`--dry-run`은 실제 API 호출과 파싱까지 수행하지만 checkpoint, raw sample, 상품 snapshot을 저장하지 않습니다.
+`--dry-run`은 실제 API 호출과 파싱까지 수행하지만 checkpoint, raw sample, 상품 master/history를 저장하지 않습니다.
 
 상세한 순회 방식은 루트 운영 문서의 [COLLECTION_METHODS.md](../docs/operations/COLLECTION_METHODS.md#쿠팡)를 봅니다. 요약하면 단일 worker가 keyword 1개당 Search API를 1회 호출하고, 성공 keyword를 `product_search_checkpoint.json`에 기록합니다. 현재 설정은 rolling window 기준 40 RPM이며, HTTP 200이어도 JSON `rCode` 제한을 검사합니다.
 

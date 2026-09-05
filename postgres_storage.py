@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 from collections.abc import Iterable
@@ -18,12 +17,22 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from numeric_utils import parse_decimal
-from product_history import comparable_state, external_product_id, normalize_current_product
+from product_history import (
+    canonicalize,
+    changed_leaf_paths,
+    comparable_state,
+    external_product_id,
+    flatten_paths,
+    normalize_current_product,
+)
 from shipping_fees import parse_shipping_fee
 
 
 TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 DOMEGGOOK_RANKED_SORTS = {"ha", "rd"}
+DEFAULT_PRODUCT_BATCH_SIZE = 1000
+PRODUCT_BATCH_SIZE_ENV = "POSTGRES_PRODUCT_BATCH_SIZE"
+LOGGER = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class PostgresConfig:
@@ -240,8 +249,6 @@ def init_schema(connection: Connection[Any]) -> None:
             seller_review_count NUMERIC(18, 2) NULL,
             first_seen_at TIMESTAMPTZ NOT NULL,
             last_collected_at TIMESTAMPTZ NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             UNIQUE (platform, external_product_id)
         )
         """,
@@ -249,45 +256,6 @@ def init_schema(connection: Connection[Any]) -> None:
         CREATE TABLE IF NOT EXISTS schema_migrations (
             name TEXT PRIMARY KEY,
             applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS product_prices (
-            id BIGSERIAL PRIMARY KEY,
-            product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-            collected_at TIMESTAMPTZ NOT NULL,
-            market TEXT NOT NULL DEFAULT 'default',
-            price_type TEXT NOT NULL DEFAULT 'primary',
-            amount NUMERIC(18, 2) NULL,
-            currency CHAR(3) NOT NULL DEFAULT 'KRW',
-            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            CONSTRAINT product_prices_product_collected_market_type_key UNIQUE (product_id, collected_at, market, price_type)
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS product_inventory (
-            id BIGSERIAL PRIMARY KEY,
-            product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-            collected_at TIMESTAMPTZ NOT NULL,
-            stock_quantity NUMERIC(18, 2) NULL,
-            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            UNIQUE (product_id, collected_at)
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS product_shipping_fees (
-            id BIGSERIAL PRIMARY KEY,
-            product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-            collected_at TIMESTAMPTZ NOT NULL,
-            market TEXT NOT NULL DEFAULT 'default',
-            fee NUMERIC(18, 2) NULL,
-            shipping_type TEXT NULL,
-            is_free_shipping BOOLEAN NULL,
-            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            CONSTRAINT product_shipping_fees_product_collected_market_key UNIQUE (product_id, collected_at, market)
         )
         """,
         """
@@ -352,6 +320,8 @@ def init_schema(connection: Connection[Any]) -> None:
         "ALTER TABLE products DROP COLUMN IF EXISTS current_payload",
         "ALTER TABLE products DROP COLUMN IF EXISTS comparable_payload",
         "ALTER TABLE products DROP COLUMN IF EXISTS comparable_fingerprint",
+        "ALTER TABLE products DROP COLUMN IF EXISTS created_at",
+        "ALTER TABLE products DROP COLUMN IF EXISTS updated_at",
         "ALTER TABLE product_search_ranks ADD COLUMN IF NOT EXISTS keyword TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE product_search_ranks ADD COLUMN IF NOT EXISTS category_code TEXT NOT NULL DEFAULT ''",
         "UPDATE product_search_ranks SET keyword = '' WHERE keyword IS NULL",
@@ -376,222 +346,37 @@ def init_schema(connection: Connection[Any]) -> None:
             END IF;
         END $$;
         """,
-        "ALTER TABLE product_prices ADD COLUMN IF NOT EXISTS market TEXT NOT NULL DEFAULT 'default'",
-        "ALTER TABLE product_shipping_fees ADD COLUMN IF NOT EXISTS market TEXT NOT NULL DEFAULT 'default'",
-        "ALTER TABLE product_prices DROP CONSTRAINT IF EXISTS product_prices_product_id_collected_at_price_type_key",
-        "ALTER TABLE product_shipping_fees DROP CONSTRAINT IF EXISTS product_shipping_fees_product_id_collected_at_key",
         """
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conname = 'product_prices_product_collected_market_type_key'
-            ) THEN
-                ALTER TABLE product_prices
-                ADD CONSTRAINT product_prices_product_collected_market_type_key
-                UNIQUE (product_id, collected_at, market, price_type);
-            END IF;
-        END $$;
-        """,
-        """
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint
-                WHERE conname = 'product_shipping_fees_product_collected_market_key'
-            ) THEN
-                ALTER TABLE product_shipping_fees
-                ADD CONSTRAINT product_shipping_fees_product_collected_market_key
-                UNIQUE (product_id, collected_at, market);
-            END IF;
-        END $$;
-        """,
-        """
-        INSERT INTO product_prices (product_id, collected_at, market, price_type, amount, currency, payload, created_at)
-        SELECT product_id, collected_at, market, price_type, amount, currency, payload, created_at
-        FROM (
-            SELECT
-                product_id,
-                collected_at,
-                market,
-                price_type,
-                CASE
-                    WHEN value_text ~ '^[+-]?(?:\\d+|\\d{1,3}(?:,\\d{3})+)(?:\\.\\d+)?$'
-                    THEN replace(value_text, ',', '')::numeric
-                    ELSE NULL
-                END AS amount,
-                currency,
-                payload,
-                created_at
-            FROM (
-                SELECT pp.product_id, pp.collected_at, pp.currency, pp.payload, pp.created_at, v.market, v.price_type, pp.payload #>> ARRAY[v.payload_key] AS value_text
-                FROM product_prices pp
-                CROSS JOIN (
-                    VALUES
-                        ('dome', 'current_supply', 'domeCurrentSupplyPrice'),
-                        ('supply', 'current_supply', 'supplyCurrentSupplyPrice'),
-                        ('retail', 'minimum_retail', 'minimumRetailPrice'),
-                        ('retail', 'recommended_retail', 'recommendedRetailPrice'),
-                        ('resale', 'minimum', 'resaleMinimumPrice'),
-                        ('resale', 'recommended', 'resaleRecommendedPrice')
-                ) AS v(market, price_type, payload_key)
-                WHERE pp.market = 'default'
-                  AND pp.payload ? v.payload_key
-                  AND pp.payload -> v.payload_key <> 'null'::jsonb
-                  AND pp.payload #>> ARRAY[v.payload_key] <> ''
-            ) source_values
-        ) backfill_rows
-        ON CONFLICT (product_id, collected_at, market, price_type) DO UPDATE SET
-            amount = EXCLUDED.amount,
-            payload = EXCLUDED.payload
-        """,
-        """
-        INSERT INTO product_prices (product_id, collected_at, market, price_type, amount, currency, payload, created_at)
-        SELECT product_id, collected_at, market, price_type, amount, currency, payload, created_at
-        FROM (
-            SELECT
-                pp.product_id,
-                pp.collected_at,
-                p.platform AS market,
-                v.price_type,
-                CASE
-                    WHEN pp.payload #>> ARRAY[v.payload_key] ~ '^[+-]?(?:\\d+|\\d{1,3}(?:,\\d{3})+)(?:\\.\\d+)?$'
-                    THEN replace(pp.payload #>> ARRAY[v.payload_key], ',', '')::numeric
-                    ELSE NULL
-                END AS amount,
-                pp.currency,
-                pp.payload,
-                pp.created_at
-            FROM product_prices pp
-            JOIN products p ON p.id = pp.product_id
-            CROSS JOIN (
-                VALUES
-                    ('current_supply', 'currentSupplyPrice'),
-                    ('fixed', 'fixedPrice')
-            ) AS v(price_type, payload_key)
-            WHERE pp.market = 'default'
-              AND pp.payload ? v.payload_key
-              AND pp.payload -> v.payload_key <> 'null'::jsonb
-              AND pp.payload #>> ARRAY[v.payload_key] <> ''
-        ) backfill_rows
-        ON CONFLICT (product_id, collected_at, market, price_type) DO UPDATE SET
-            amount = EXCLUDED.amount,
-            payload = EXCLUDED.payload
-        """,
-        """
-        INSERT INTO product_shipping_fees (product_id, collected_at, market, fee, shipping_type, is_free_shipping, payload, created_at)
-        SELECT product_id, collected_at, market, fee, shipping_type, is_free_shipping, payload, created_at
-        FROM (
-            SELECT
-                ps.product_id,
-                ps.collected_at,
-                v.market,
-                CASE
-                    WHEN ps.payload #>> ARRAY[v.fee_key] ~ '^[+-]?(?:\\d+|\\d{1,3}(?:,\\d{3})+)(?:\\.\\d+)?$'
-                    THEN replace(ps.payload #>> ARRAY[v.fee_key], ',', '')::numeric
-                    ELSE NULL
-                END AS fee,
-                NULLIF(ps.payload #>> ARRAY[v.type_key], '') AS shipping_type,
-                ps.is_free_shipping,
-                ps.payload,
-                ps.created_at
-            FROM product_shipping_fees ps
-            CROSS JOIN (
-                VALUES
-                    ('dome', 'domeFee', 'domeFeeType'),
-                    ('supply', 'supplyFee', 'supplyFeeType')
-            ) AS v(market, fee_key, type_key)
-            WHERE ps.market = 'default'
-              AND (
-                  (
-                      ps.payload ? v.fee_key
-                      AND ps.payload -> v.fee_key <> 'null'::jsonb
-                      AND ps.payload -> v.fee_key <> '{"__value__": "__MISSING__"}'::jsonb
-                      AND ps.payload #>> ARRAY[v.fee_key] <> ''
-                  )
-                  OR (
-                      ps.payload ? v.type_key
-                      AND ps.payload -> v.type_key <> 'null'::jsonb
-                      AND ps.payload -> v.type_key <> '{"__value__": "__MISSING__"}'::jsonb
-                      AND ps.payload #>> ARRAY[v.type_key] <> ''
-                  )
-              )
-        ) backfill_rows
-        ON CONFLICT (product_id, collected_at, market) DO UPDATE SET
-            fee = EXCLUDED.fee,
-            shipping_type = EXCLUDED.shipping_type,
-            is_free_shipping = EXCLUDED.is_free_shipping,
-            payload = EXCLUDED.payload
-        """,
-        """
-        INSERT INTO product_shipping_fees (product_id, collected_at, market, fee, shipping_type, is_free_shipping, payload, created_at)
-        SELECT product_id, collected_at, market, fee, shipping_type, is_free_shipping, payload, created_at
-        FROM (
-            SELECT
-                ps.product_id,
-                ps.collected_at,
-                p.platform AS market,
-                CASE
-                    WHEN ps.payload #>> '{fee}' ~ '^[+-]?(?:\\d+|\\d{1,3}(?:,\\d{3})+)(?:\\.\\d+)?$'
-                    THEN replace(ps.payload #>> '{fee}', ',', '')::numeric
-                    ELSE NULL
-                END AS fee,
-                NULLIF(COALESCE(ps.payload #>> '{type}', ps.payload #>> '{feeType}'), '') AS shipping_type,
-                ps.is_free_shipping,
-                ps.payload,
-                ps.created_at
-            FROM product_shipping_fees ps
-            JOIN products p ON p.id = ps.product_id
-            WHERE ps.market = 'default'
-              AND (
-                  (
-                      ps.payload ? 'fee'
-                      AND ps.payload -> 'fee' <> 'null'::jsonb
-                      AND ps.payload -> 'fee' <> '{"__value__": "__MISSING__"}'::jsonb
-                      AND ps.payload #>> '{fee}' <> ''
-                  )
-                  OR (
-                      ps.payload ? 'type'
-                      AND ps.payload -> 'type' <> 'null'::jsonb
-                      AND ps.payload -> 'type' <> '{"__value__": "__MISSING__"}'::jsonb
-                      AND ps.payload #>> '{type}' <> ''
-                  )
-                  OR (
-                      ps.payload ? 'feeType'
-                      AND ps.payload -> 'feeType' <> 'null'::jsonb
-                      AND ps.payload -> 'feeType' <> '{"__value__": "__MISSING__"}'::jsonb
-                      AND ps.payload #>> '{feeType}' <> ''
-                  )
-              )
-        ) backfill_rows
-        ON CONFLICT (product_id, collected_at, market) DO UPDATE SET
-            fee = EXCLUDED.fee,
-            shipping_type = EXCLUDED.shipping_type,
-            is_free_shipping = EXCLUDED.is_free_shipping,
-            payload = EXCLUDED.payload
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS product_change_history (
+        CREATE TABLE IF NOT EXISTS product_history (
             id BIGSERIAL PRIMARY KEY,
             product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-            changed_at TIMESTAMPTZ NOT NULL,
+            observed_at TIMESTAMPTZ NOT NULL,
             change_type TEXT NOT NULL,
             changed_fields TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+            prices JSONB NOT NULL DEFAULT '{}'::jsonb,
+            inventory JSONB NOT NULL DEFAULT '{}'::jsonb,
+            shipping JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status TEXT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )
         """,
-        "ALTER TABLE product_change_history ADD COLUMN IF NOT EXISTS changed_fields TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]",
-        "ALTER TABLE product_change_history DROP COLUMN IF EXISTS before_payload",
-        "ALTER TABLE product_change_history DROP COLUMN IF EXISTS after_payload",
-        "ALTER TABLE product_change_history DROP COLUMN IF EXISTS before_fingerprint",
-        "ALTER TABLE product_change_history DROP COLUMN IF EXISTS after_fingerprint",
+        "ALTER TABLE product_history ADD COLUMN IF NOT EXISTS observed_at TIMESTAMPTZ",
+        "ALTER TABLE product_history ADD COLUMN IF NOT EXISTS changed_fields TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]",
+        "ALTER TABLE product_history ADD COLUMN IF NOT EXISTS prices JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE product_history ADD COLUMN IF NOT EXISTS inventory JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE product_history ADD COLUMN IF NOT EXISTS shipping JSONB NOT NULL DEFAULT '{}'::jsonb",
+        "ALTER TABLE product_history ADD COLUMN IF NOT EXISTS status TEXT NULL",
+        "UPDATE product_history SET observed_at = created_at WHERE observed_at IS NULL",
+        "ALTER TABLE product_history ALTER COLUMN observed_at SET NOT NULL",
+        "DROP TABLE IF EXISTS product_change_history",
         "DROP TABLE IF EXISTS product_latest_fields",
+        "DROP TABLE IF EXISTS product_prices",
+        "DROP TABLE IF EXISTS product_inventory",
+        "DROP TABLE IF EXISTS product_shipping_fees",
         "CREATE INDEX IF NOT EXISTS idx_products_platform_external_id ON products(platform, external_product_id)",
         "CREATE INDEX IF NOT EXISTS idx_products_last_collected_at ON products(last_collected_at)",
-        "CREATE INDEX IF NOT EXISTS idx_product_change_history_product_changed_at ON product_change_history(product_id, changed_at)",
-        "CREATE INDEX IF NOT EXISTS idx_product_prices_product_collected_at ON product_prices(product_id, collected_at)",
-        "CREATE INDEX IF NOT EXISTS idx_product_inventory_product_collected_at ON product_inventory(product_id, collected_at)",
-        "CREATE INDEX IF NOT EXISTS idx_product_shipping_fees_product_collected_at ON product_shipping_fees(product_id, collected_at)",
+        "CREATE INDEX IF NOT EXISTS idx_product_history_product_observed_at ON product_history(product_id, observed_at)",
+        "CREATE INDEX IF NOT EXISTS idx_product_history_changed_fields_gin ON product_history USING GIN(changed_fields)",
         "CREATE INDEX IF NOT EXISTS idx_product_raw_samples_platform_collected_at ON product_raw_samples(platform, collected_at)",
         "CREATE INDEX IF NOT EXISTS idx_product_search_ranks_platform_collected_at ON product_search_ranks(platform, collected_at)",
         "CREATE INDEX IF NOT EXISTS idx_product_discovery_targets_platform_active ON product_discovery_targets(platform, active, first_discovered_at)",
@@ -611,7 +396,7 @@ def _apply_one_time_migrations(connection: Connection[Any]) -> None:
     ).fetchone()
     if applied:
         return
-    connection.execute("DELETE FROM product_change_history")
+    connection.execute("DROP TABLE IF EXISTS product_change_history")
     connection.execute(
         "INSERT INTO schema_migrations (name) VALUES (%s)",
         (migration_name,),
@@ -631,12 +416,22 @@ def save_product_snapshots(
         return 0
 
     config = load_postgres_config(project_root)
+    batch_size = _product_batch_size(project_root)
+    saved_count = 0
     with connect(config) as connection:
         init_schema(connection)
-        for row in rows:
-            _save_snapshot(connection, row)
-        connection.commit()
-    return len(rows)
+        for batch in _chunks(rows, batch_size):
+            try:
+                saved_count += _save_product_batch_with_retry(connection, batch)
+            except Exception:
+                LOGGER.exception(
+                    "failed PostgreSQL product batch platform=%s count=%d firstExternalProductId=%s",
+                    platform,
+                    len(batch),
+                    batch[0]["external_product_id"] if batch else "",
+                )
+                connection.rollback()
+    return saved_count
 
 
 def save_product_snapshots_if_enabled(
@@ -848,288 +643,282 @@ def _positive_int(value: Any) -> int | None:
     return parsed if parsed > 0 else None
 
 
-def _save_snapshot(connection: Connection[Any], row: dict[str, Any]) -> None:
-    existing = connection.execute(
+def _product_batch_size(project_root: Path | None = None) -> int:
+    if project_root is not None:
+        load_dotenv(project_root / ".env", override=False)
+    else:
+        load_dotenv(override=False)
+    raw = os.getenv(PRODUCT_BATCH_SIZE_ENV)
+    if raw in (None, ""):
+        return DEFAULT_PRODUCT_BATCH_SIZE
+    try:
+        parsed = int(str(raw))
+    except ValueError:
+        LOGGER.warning("invalid %s=%r; using default %d", PRODUCT_BATCH_SIZE_ENV, raw, DEFAULT_PRODUCT_BATCH_SIZE)
+        return DEFAULT_PRODUCT_BATCH_SIZE
+    if parsed <= 0:
+        LOGGER.warning("invalid %s=%r; using default %d", PRODUCT_BATCH_SIZE_ENV, raw, DEFAULT_PRODUCT_BATCH_SIZE)
+        return DEFAULT_PRODUCT_BATCH_SIZE
+    return parsed
+
+
+def _chunks(rows: list[dict[str, Any]], size: int) -> Iterator[list[dict[str, Any]]]:
+    for index in range(0, len(rows), size):
+        yield rows[index : index + size]
+
+
+def _save_product_batch_with_retry(connection: Connection[Any], rows: list[dict[str, Any]]) -> int:
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            saved_count = _save_product_batch(connection, rows)
+            connection.commit()
+            return saved_count
+        except Exception as exc:
+            last_error = exc
+            connection.rollback()
+            if attempt == 0:
+                LOGGER.warning("retrying PostgreSQL product batch count=%d after failure: %s", len(rows), exc)
+    assert last_error is not None
+    raise last_error
+
+
+def _save_product_batch(connection: Connection[Any], rows: list[dict[str, Any]]) -> int:
+    unique_rows = _dedupe_product_rows(rows)
+    if not unique_rows:
+        return 0
+    external_ids = [row["external_product_id"] for row in unique_rows]
+    existing_states = _existing_product_states(connection, unique_rows[0]["platform"], external_ids)
+    history_plans = _history_insert_plans(unique_rows, existing_states)
+    _bulk_upsert_products(connection, unique_rows, existing_states)
+    product_ids = _product_ids(connection, unique_rows[0]["platform"], external_ids)
+    _bulk_insert_history(connection, history_plans, product_ids)
+    return len(unique_rows)
+
+
+def _dedupe_product_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        deduped[row["external_product_id"]] = row
+    return list(deduped.values())
+
+
+def _existing_product_states(
+    connection: Connection[Any],
+    platform: str,
+    external_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    rows = connection.execute(
         """
         SELECT
-            id,
-            first_seen_at,
-            product_name,
-            product_url,
-            image_url,
-            backup_image_url,
-            status,
-            seller_external_id,
-            seller_nickname,
-            seller_type,
-            seller_grade,
-            seller_excellent_seller,
-            seller_average_satisfaction,
-            seller_review_count
+            p.id,
+            p.external_product_id,
+            p.first_seen_at,
+            h.prices,
+            h.inventory,
+            h.shipping,
+            h.status
+        FROM products p
+        LEFT JOIN LATERAL (
+            SELECT prices, inventory, shipping, status
+            FROM product_history
+            WHERE product_id = p.id
+            ORDER BY observed_at DESC, id DESC
+            LIMIT 1
+        ) h ON true
+        WHERE p.platform = %s
+          AND p.external_product_id = ANY(%s)
+        """,
+        (platform, external_ids),
+    ).fetchall()
+    return {str(row["external_product_id"]): row for row in rows}
+
+
+def _product_ids(connection: Connection[Any], platform: str, external_ids: list[str]) -> dict[str, int]:
+    rows = connection.execute(
+        """
+        SELECT id, external_product_id
         FROM products
-        WHERE platform = %s AND external_product_id = %s
+        WHERE platform = %s
+          AND external_product_id = ANY(%s)
         """,
-        (row["platform"], row["external_product_id"]),
-    ).fetchone()
-    first_seen_at = existing.get("first_seen_at") if existing else row["collected_at"]
-    seller = row["seller"]
-    previous_values = _previous_snapshot_values(connection, existing) if existing else {}
-    current_values = _current_snapshot_values(row)
-    changed_fields = _changed_field_paths(previous_values, current_values)
-
-    product = connection.execute(
-        """
-        INSERT INTO products (
-            platform,
-            external_product_id,
-            product_name,
-            product_url,
-            image_url,
-            backup_image_url,
-            status,
-            seller_external_id,
-            seller_nickname,
-            seller_type,
-            seller_grade,
-            seller_excellent_seller,
-            seller_average_satisfaction,
-            seller_review_count,
-            first_seen_at,
-            last_collected_at,
-            updated_at
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
-        ON CONFLICT (platform, external_product_id) DO UPDATE SET
-            product_name = EXCLUDED.product_name,
-            product_url = EXCLUDED.product_url,
-            image_url = EXCLUDED.image_url,
-            backup_image_url = EXCLUDED.backup_image_url,
-            status = EXCLUDED.status,
-            seller_external_id = EXCLUDED.seller_external_id,
-            seller_nickname = EXCLUDED.seller_nickname,
-            seller_type = EXCLUDED.seller_type,
-            seller_grade = EXCLUDED.seller_grade,
-            seller_excellent_seller = EXCLUDED.seller_excellent_seller,
-            seller_average_satisfaction = EXCLUDED.seller_average_satisfaction,
-            seller_review_count = EXCLUDED.seller_review_count,
-            last_collected_at = EXCLUDED.last_collected_at,
-            updated_at = now()
-        RETURNING id
-        """,
-        (
-            row["platform"],
-            row["external_product_id"],
-            row["product_name"],
-            row["product_url"],
-            row["image_url"],
-            row["backup_image_url"],
-            row["status"],
-            seller["id"],
-            seller["nickname"],
-            seller["type"],
-            seller["grade"],
-            seller["excellent_seller"],
-            seller["average_satisfaction"],
-            seller["review_count"],
-            first_seen_at,
-            row["collected_at"],
-        ),
-    ).fetchone()
-    product_id = product["id"]
-
-    _insert_price(connection, product_id, row)
-    _insert_inventory(connection, product_id, row)
-    _insert_shipping(connection, product_id, row)
-
-    if changed_fields:
-        connection.execute(
-            """
-            INSERT INTO product_change_history (
-                product_id,
-                changed_at,
-                change_type,
-                changed_fields
-            )
-            VALUES (%s, %s, %s, %s)
-            """,
-            (
-                product_id,
-                row["collected_at"],
-                "initial" if existing is None else "update",
-                changed_fields,
-            ),
-        )
-
-
-def _changed_field_paths(previous: dict[str, str], current: dict[str, str]) -> list[str]:
-    return sorted(
-        field_path
-        for field_path in set(previous) | set(current)
-        if previous.get(field_path) != current.get(field_path)
-    )
-
-
-def _previous_snapshot_values(connection: Connection[Any], existing: dict[str, Any]) -> dict[str, str]:
-    product_id = existing["id"]
-    values = _product_master_values(existing)
-    price_rows = connection.execute(
-        """
-        SELECT market, price_type, amount
-        FROM product_prices
-        WHERE product_id = %s
-          AND collected_at = (
-              SELECT max(collected_at)
-              FROM product_prices
-              WHERE product_id = %s
-          )
-        """,
-        (product_id, product_id),
+        (platform, external_ids),
     ).fetchall()
-    for price in price_rows:
-        values[f"prices.{price['market']}.{price['price_type']}"] = _stable_value_text(price["amount"])
-
-    inventory = connection.execute(
-        """
-        SELECT stock_quantity
-        FROM product_inventory
-        WHERE product_id = %s
-        ORDER BY collected_at DESC
-        LIMIT 1
-        """,
-        (product_id,),
-    ).fetchone()
-    if inventory:
-        values["inventory.stockQuantity"] = _stable_value_text(inventory["stock_quantity"])
-
-    shipping_rows = connection.execute(
-        """
-        SELECT market, fee, shipping_type, is_free_shipping
-        FROM product_shipping_fees
-        WHERE product_id = %s
-          AND collected_at = (
-              SELECT max(collected_at)
-              FROM product_shipping_fees
-              WHERE product_id = %s
-          )
-        """,
-        (product_id, product_id),
-    ).fetchall()
-    for shipping in shipping_rows:
-        prefix = f"shipping.{shipping['market']}"
-        values[f"{prefix}.fee"] = _stable_value_text(shipping["fee"])
-        values[f"{prefix}.shippingType"] = _stable_value_text(shipping["shipping_type"])
-        values[f"{prefix}.isFreeShipping"] = _stable_value_text(shipping["is_free_shipping"])
-    return values
+    return {str(row["external_product_id"]): int(row["id"]) for row in rows}
 
 
-def _current_snapshot_values(row: dict[str, Any]) -> dict[str, str]:
-    values = _product_master_values(
+def _history_insert_plans(
+    rows: list[dict[str, Any]],
+    existing_states: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    plans: list[dict[str, Any]] = []
+    for row in rows:
+        current_state = _history_state(row)
+        existing = existing_states.get(row["external_product_id"])
+        if existing is None or existing.get("prices") is None:
+            changed_fields = sorted(flatten_paths(current_state))
+            change_type = "initial"
+        else:
+            previous_state = {
+                "prices": existing.get("prices") or {},
+                "inventory": existing.get("inventory") or {},
+                "shipping": existing.get("shipping") or {},
+                "status": existing.get("status"),
+            }
+            changed_fields = changed_leaf_paths(canonicalize(previous_state), canonicalize(current_state))
+            change_type = "update"
+        if not changed_fields:
+            continue
+        plans.append(
+            {
+                "external_product_id": row["external_product_id"],
+                "observed_at": row["collected_at"],
+                "change_type": change_type,
+                "changed_fields": changed_fields,
+                **current_state,
+            }
+        )
+    return plans
+
+
+def _history_state(row: dict[str, Any]) -> dict[str, Any]:
+    shipping_rows = [
         {
-            "product_name": row["product_name"],
-            "product_url": row["product_url"],
-            "image_url": row["image_url"],
-            "backup_image_url": row["backup_image_url"],
+            "market": shipping["market"],
+            "fee": shipping["fee"],
+            "shippingType": shipping["shipping_type"],
+            "isFreeShipping": row["is_free_shipping"],
+            "payload": shipping.get("payload", row["shipping_payload"]),
+        }
+        for shipping in row["shipping_rows"]
+        if _has_shipping_snapshot(shipping, row)
+    ]
+    return _json_safe(
+        {
+            "prices": {
+                "rows": row["price_rows"],
+                "payload": row["prices_payload"],
+            },
+            "inventory": {
+                "stockQuantity": row["stock_quantity"],
+                "payload": row["inventory_payload"] if _has_inventory_snapshot(row) else {},
+                "options": row["options_payload"],
+            },
+            "shipping": {
+                "rows": shipping_rows,
+                "payload": row["shipping_payload"] if shipping_rows else {},
+            },
             "status": row["status"],
-            "seller_external_id": row["seller"]["id"],
-            "seller_nickname": row["seller"]["nickname"],
-            "seller_type": row["seller"]["type"],
-            "seller_grade": row["seller"]["grade"],
-            "seller_excellent_seller": row["seller"]["excellent_seller"],
-            "seller_average_satisfaction": row["seller"]["average_satisfaction"],
-            "seller_review_count": row["seller"]["review_count"],
         }
     )
-    for price in row["price_rows"]:
-        values[f"prices.{price['market']}.{price['price_type']}"] = _stable_value_text(price["amount"])
-    if _has_inventory_snapshot(row):
-        values["inventory.stockQuantity"] = _stable_value_text(row["stock_quantity"])
-    for shipping in row["shipping_rows"]:
-        if not _has_shipping_snapshot(shipping, row):
-            continue
-        prefix = f"shipping.{shipping['market']}"
-        values[f"{prefix}.fee"] = _stable_value_text(shipping["fee"])
-        values[f"{prefix}.shippingType"] = _stable_value_text(shipping["shipping_type"])
-        values[f"{prefix}.isFreeShipping"] = _stable_value_text(row["is_free_shipping"])
-    return values
 
 
-def _product_master_values(row: dict[str, Any]) -> dict[str, str]:
-    fields = (
-        "product_name",
-        "product_url",
-        "image_url",
-        "backup_image_url",
-        "status",
-        "seller_external_id",
-        "seller_nickname",
-        "seller_type",
-        "seller_grade",
-        "seller_excellent_seller",
-        "seller_average_satisfaction",
-        "seller_review_count",
-    )
-    return {field: _stable_value_text(row.get(field)) for field in fields}
-
-
-def _insert_price(connection: Connection[Any], product_id: int, row: dict[str, Any]) -> None:
-    for price in row["price_rows"]:
-        connection.execute(
+def _bulk_upsert_products(
+    connection: Connection[Any],
+    rows: list[dict[str, Any]],
+    existing_states: dict[str, dict[str, Any]],
+) -> None:
+    with connection.cursor() as cursor:
+        cursor.executemany(
             """
-            INSERT INTO product_prices (product_id, collected_at, market, price_type, amount, payload)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (product_id, collected_at, market, price_type) DO UPDATE SET
-                amount = EXCLUDED.amount,
-                payload = EXCLUDED.payload
+            INSERT INTO products (
+                platform,
+                external_product_id,
+                product_name,
+                product_url,
+                image_url,
+                backup_image_url,
+                status,
+                seller_external_id,
+                seller_nickname,
+                seller_type,
+                seller_grade,
+                seller_excellent_seller,
+                seller_average_satisfaction,
+                seller_review_count,
+                first_seen_at,
+                last_collected_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (platform, external_product_id) DO UPDATE SET
+                product_name = EXCLUDED.product_name,
+                product_url = EXCLUDED.product_url,
+                image_url = EXCLUDED.image_url,
+                backup_image_url = EXCLUDED.backup_image_url,
+                status = EXCLUDED.status,
+                seller_external_id = EXCLUDED.seller_external_id,
+                seller_nickname = EXCLUDED.seller_nickname,
+                seller_type = EXCLUDED.seller_type,
+                seller_grade = EXCLUDED.seller_grade,
+                seller_excellent_seller = EXCLUDED.seller_excellent_seller,
+                seller_average_satisfaction = EXCLUDED.seller_average_satisfaction,
+                seller_review_count = EXCLUDED.seller_review_count,
+                last_collected_at = EXCLUDED.last_collected_at
             """,
-            (
-                product_id,
-                row["collected_at"],
-                price["market"],
-                price["price_type"],
-                price["amount"],
-                Jsonb(row["prices_payload"]),
-            ),
+            [_product_upsert_params(row, existing_states.get(row["external_product_id"])) for row in rows],
         )
 
 
-def _insert_inventory(connection: Connection[Any], product_id: int, row: dict[str, Any]) -> None:
-    if not _has_inventory_snapshot(row):
-        return
-    connection.execute(
-        """
-        INSERT INTO product_inventory (product_id, collected_at, stock_quantity, payload)
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (product_id, collected_at) DO UPDATE SET
-            stock_quantity = EXCLUDED.stock_quantity,
-            payload = EXCLUDED.payload
-        """,
-        (product_id, row["collected_at"], row["stock_quantity"], Jsonb(row["inventory_payload"])),
+def _product_upsert_params(row: dict[str, Any], existing: dict[str, Any] | None) -> tuple[Any, ...]:
+    seller = row["seller"]
+    first_seen_at = existing.get("first_seen_at") if existing else row["collected_at"]
+    return (
+        row["platform"],
+        row["external_product_id"],
+        row["product_name"],
+        row["product_url"],
+        row["image_url"],
+        row["backup_image_url"],
+        row["status"],
+        seller["id"],
+        seller["nickname"],
+        seller["type"],
+        seller["grade"],
+        seller["excellent_seller"],
+        seller["average_satisfaction"],
+        seller["review_count"],
+        first_seen_at,
+        row["collected_at"],
     )
 
 
-def _insert_shipping(connection: Connection[Any], product_id: int, row: dict[str, Any]) -> None:
-    for shipping in row["shipping_rows"]:
-        if not _has_shipping_snapshot(shipping, row):
-            continue
-        connection.execute(
+def _bulk_insert_history(
+    connection: Connection[Any],
+    history_plans: list[dict[str, Any]],
+    product_ids: dict[str, int],
+) -> None:
+    rows = [
+        (
+            product_ids[plan["external_product_id"]],
+            plan["observed_at"],
+            plan["change_type"],
+            plan["changed_fields"],
+            Jsonb(plan["prices"]),
+            Jsonb(plan["inventory"]),
+            Jsonb(plan["shipping"]),
+            plan["status"],
+        )
+        for plan in history_plans
+        if plan["external_product_id"] in product_ids
+    ]
+    if not rows:
+        return
+    with connection.cursor() as cursor:
+        cursor.executemany(
             """
-            INSERT INTO product_shipping_fees (product_id, collected_at, market, fee, shipping_type, is_free_shipping, payload)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (product_id, collected_at, market) DO UPDATE SET
-                fee = EXCLUDED.fee,
-                shipping_type = EXCLUDED.shipping_type,
-                is_free_shipping = EXCLUDED.is_free_shipping,
-                payload = EXCLUDED.payload
-            """,
-            (
+            INSERT INTO product_history (
                 product_id,
-                row["collected_at"],
-                shipping["market"],
-                shipping["fee"],
-                shipping["shipping_type"],
-                row["is_free_shipping"],
-                Jsonb(_json_safe(shipping.get("payload", row["shipping_payload"]))),
-            ),
+                observed_at,
+                change_type,
+                changed_fields,
+                prices,
+                inventory,
+                shipping,
+                status
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            rows,
         )
 
 
@@ -1198,6 +987,7 @@ def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> 
         "seller": seller,
         "prices_payload": prices,
         "inventory_payload": inventory,
+        "options_payload": comparable.get("options") if isinstance(comparable.get("options"), list) else current.get("options", []),
         "shipping_payload": shipping_payload,
         "primary_price": _decimal_or_none(_extract_primary_price(prices, current)),
         "price_rows": _price_rows(platform, prices, current),
@@ -1219,10 +1009,6 @@ def _seller_row(seller: dict[str, Any]) -> dict[str, Any]:
         "average_satisfaction": _text_or_none(seller.get("averageSatisfaction")),
         "review_count": _decimal_or_none(seller.get("reviewCount")),
     }
-
-
-def _stable_value_text(value: Any) -> str:
-    return json.dumps(_json_safe(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _parse_datetime(value: str) -> datetime:

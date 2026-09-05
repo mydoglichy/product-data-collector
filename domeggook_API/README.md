@@ -1,6 +1,6 @@
 # 도매꾹/도매매 수집기
 
-도매꾹/도매매 Open API에서 상품 ID를 발견하고 상세 상품 snapshot을 PostgreSQL에 저장합니다.
+도매꾹/도매매 Open API에서 상품 ID를 발견하고 상세 상품 master와 변경된 핵심 history를 PostgreSQL에 저장합니다.
 
 ## 실행 흐름
 
