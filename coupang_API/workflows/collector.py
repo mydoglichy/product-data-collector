@@ -12,7 +12,7 @@ from ..config import CollectorConfig, load_config, load_credentials, load_keywor
 from ..services.models import parse_product_records
 from ..api.rate_limiter import RateLimiter
 from ..persistence.storage import dedupe_records
-from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
+from postgres_storage import save_products_with_raw_samples_if_enabled
 
 
 LOGGER = logging.getLogger("coupang_API")
@@ -95,19 +95,12 @@ def collect_once(project_root: Path, config: CollectorConfig, *, dry_run: bool =
         checkpoint.clear()
     collected_at = ended_at.isoformat().replace("+00:00", "Z")
     if not dry_run:
-        save_product_raw_samples_if_enabled(
+        save_products_with_raw_samples_if_enabled(
             project_root=project_root,
             platform="coupang",
             collected_at=collected_at,
             products=collected_products.values(),
-            limit=config.raw_sample_limit,
-            logger=LOGGER,
-        )
-        save_product_snapshots_if_enabled(
-            project_root=project_root,
-            platform="coupang",
-            collected_at=collected_at,
-            products=(_without_raw(product) for product in collected_products.values()),
+            raw_sample_limit=config.raw_sample_limit,
             logger=LOGGER,
         )
 
@@ -142,12 +135,6 @@ def collect_once(project_root: Path, config: CollectorConfig, *, dry_run: bool =
         LOGGER.info("failed keywords=%s", ", ".join(failure_keywords))
 
     return 1 if failure_keywords else 0
-
-
-def _without_raw(product: dict[str, object]) -> dict[str, object]:
-    result = dict(product)
-    result.pop("raw", None)
-    return result
 
 
 def main(argv: list[str] | None = None) -> int:

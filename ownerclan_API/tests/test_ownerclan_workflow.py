@@ -98,19 +98,16 @@ def test_keyword_default_and_new_search_and_dedupes_product_keys(tmp_path):
 def test_category_collection_refreshes_leaf_cache_and_saves_products(tmp_path):
     config = _config(tmp_path)
     client = FakeClient()
-    saved = {"raw": [], "snapshots": []}
+    saved = []
 
     import ownerclan_API.workflows.collect_by_categories as collect_module
-    original_raw = collect_module.save_product_raw_samples_if_enabled
-    original_snapshots = collect_module.save_product_snapshots_if_enabled
-    collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: saved["raw"].append(kwargs) or 1
-    collect_module.save_product_snapshots_if_enabled = lambda **kwargs: saved["snapshots"].append(kwargs) or 1
+    original_save = collect_module.save_products_with_raw_samples_if_enabled
+    collect_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: saved.append(kwargs) or {"rawSampleCount": 1, "snapshotCount": 1}
 
     try:
         result = collect_by_categories(tmp_path, config, refresh_categories=True, client=client)
     finally:
-        collect_module.save_product_raw_samples_if_enabled = original_raw
-        collect_module.save_product_snapshots_if_enabled = original_snapshots
+        collect_module.save_products_with_raw_samples_if_enabled = original_save
 
     assert result["categoryCount"] == 1
     assert result["pageCount"] == 1
@@ -120,8 +117,7 @@ def test_category_collection_refreshes_leaf_cache_and_saves_products(tmp_path):
     assert cached["leafCategoryCount"] == 1
     assert cached["categories"][0]["key"] == "C1-1"
     assert not (config.output.state_dir / "tracked_products.json").exists()
-    assert len(saved["raw"]) == 1
-    assert len(saved["snapshots"]) == 1
+    assert len(saved) == 1
 
 
 def test_category_collection_resumes_from_saved_cursor(tmp_path):
@@ -149,17 +145,14 @@ def test_category_collection_resumes_from_saved_cursor(tmp_path):
             }
 
     import ownerclan_API.workflows.collect_by_categories as collect_module
-    original_raw = collect_module.save_product_raw_samples_if_enabled
-    original_snapshots = collect_module.save_product_snapshots_if_enabled
-    collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
-    collect_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+    original_save = collect_module.save_products_with_raw_samples_if_enabled
+    collect_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: {"rawSampleCount": 0, "snapshotCount": 0}
 
     try:
         first_client = FailingSecondPageClient()
         first_result = collect_by_categories(tmp_path, config, client=first_client)
     finally:
-        collect_module.save_product_raw_samples_if_enabled = original_raw
-        collect_module.save_product_snapshots_if_enabled = original_snapshots
+        collect_module.save_products_with_raw_samples_if_enabled = original_save
 
     assert first_result["failureCount"] == 1
     state = load_json_object(config.output.state_dir / "category-collection-state.json")
@@ -180,14 +173,12 @@ def test_category_collection_resumes_from_saved_cursor(tmp_path):
                 }
             }
 
-    collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
-    collect_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+    collect_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: {"rawSampleCount": 0, "snapshotCount": 0}
     try:
         second_client = ResumingClient()
         second_result = collect_by_categories(tmp_path, config, client=second_client)
     finally:
-        collect_module.save_product_raw_samples_if_enabled = original_raw
-        collect_module.save_product_snapshots_if_enabled = original_snapshots
+        collect_module.save_products_with_raw_samples_if_enabled = original_save
 
     assert second_result["failureCount"] == 0
     assert len(second_client.queries) == 1
@@ -216,29 +207,25 @@ def test_multiple_item_query_falls_back_to_items_by_keys_then_single_item():
 def test_collect_details_saves_products_to_postgres_without_json_outputs(tmp_path):
     config = _config(tmp_path)
     client = FakeClient()
-    saved = {"raw": [], "snapshots": []}
+    saved = []
 
     import ownerclan_API.workflows.collect_product_details as collect_module
-    original_raw = collect_module.save_product_raw_samples_if_enabled
-    original_snapshots = collect_module.save_product_snapshots_if_enabled
+    original_save = collect_module.save_products_with_raw_samples_if_enabled
     original_targets = collect_module.discovered_product_ids
-    collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: saved["raw"].append(kwargs) or 1
-    collect_module.save_product_snapshots_if_enabled = lambda **kwargs: saved["snapshots"].append(kwargs) or 1
+    collect_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: saved.append(kwargs) or {"rawSampleCount": 1, "snapshotCount": 1}
     collect_module.discovered_product_ids = lambda **kwargs: ["W1", "W2"]
 
     try:
         result = collect_details(tmp_path, config, client=client)
     finally:
-        collect_module.save_product_raw_samples_if_enabled = original_raw
-        collect_module.save_product_snapshots_if_enabled = original_snapshots
+        collect_module.save_products_with_raw_samples_if_enabled = original_save
         collect_module.discovered_product_ids = original_targets
 
     assert result["successCount"] == 2
-    assert len(saved["raw"]) == 1
-    assert len(saved["snapshots"]) == 1
-    saved_products = list(saved["snapshots"][0]["products"])
+    assert len(saved) == 1
+    saved_products = list(saved[0]["products"])
     assert saved_products
-    assert all("raw" not in product for product in saved_products)
+    assert all("raw" in product for product in saved_products)
     assert not (config.output.state_dir / "latest-products.json").exists()
     data_dir = tmp_path / "ownerclan_API" / "data"
     assert not list((data_dir / "processed").glob("ownerclan_*_product-snapshots.json"))
@@ -259,19 +246,16 @@ def test_collect_details_resumes_from_saved_batch_index(tmp_path):
             return {}
 
     import ownerclan_API.workflows.collect_product_details as collect_module
-    original_raw = collect_module.save_product_raw_samples_if_enabled
-    original_snapshots = collect_module.save_product_snapshots_if_enabled
+    original_save = collect_module.save_products_with_raw_samples_if_enabled
     original_targets = collect_module.discovered_product_ids
-    collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
-    collect_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+    collect_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: {"rawSampleCount": 0, "snapshotCount": 0}
     collect_module.discovered_product_ids = lambda **kwargs: ["W1", "W2", "W3"]
 
     try:
         first_client = FailingSecondBatchClient()
         first_result = collect_details(tmp_path, config, client=first_client)
     finally:
-        collect_module.save_product_raw_samples_if_enabled = original_raw
-        collect_module.save_product_snapshots_if_enabled = original_snapshots
+        collect_module.save_products_with_raw_samples_if_enabled = original_save
         collect_module.discovered_product_ids = original_targets
 
     assert first_result["failureCount"] == 1
@@ -284,15 +268,13 @@ def test_collect_details_resumes_from_saved_batch_index(tmp_path):
                 return {"items": [_item("W3")]}
             return {}
 
-    collect_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
-    collect_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+    collect_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: {"rawSampleCount": 0, "snapshotCount": 0}
     collect_module.discovered_product_ids = lambda **kwargs: ["W1", "W2", "W3"]
     try:
         second_client = ResumingClient()
         second_result = collect_details(tmp_path, config, client=second_client)
     finally:
-        collect_module.save_product_raw_samples_if_enabled = original_raw
-        collect_module.save_product_snapshots_if_enabled = original_snapshots
+        collect_module.save_products_with_raw_samples_if_enabled = original_save
         collect_module.discovered_product_ids = original_targets
 
     assert second_result["failureCount"] == 0
@@ -315,16 +297,13 @@ def test_cursor_pagination_and_repeated_cursor_stops(tmp_path):
 
     config = _config(tmp_path)
     import ownerclan_API.workflows.sync_incremental as sync_module
-    original_raw = sync_module.save_product_raw_samples_if_enabled
-    original_snapshots = sync_module.save_product_snapshots_if_enabled
-    sync_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
-    sync_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+    original_save = sync_module.save_products_with_raw_samples_if_enabled
+    sync_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: {"rawSampleCount": 0, "snapshotCount": 0}
 
     try:
         result = sync_incremental(tmp_path, config, client=PagingClient())
     finally:
-        sync_module.save_product_raw_samples_if_enabled = original_raw
-        sync_module.save_product_snapshots_if_enabled = original_snapshots
+        sync_module.save_products_with_raw_samples_if_enabled = original_save
 
     assert result["pageCount"] == 2
     assert result["successCount"] == 2
@@ -368,8 +347,7 @@ def test_parallel_category_collection_uses_one_shared_rate_limiter(tmp_path, mon
         lambda *args, **kwargs: [{"key": "C1"}, {"key": "C2"}],
     )
     monkeypatch.setattr(category_module, "make_client", fake_make_client)
-    monkeypatch.setattr(category_module, "save_product_raw_samples_if_enabled", lambda **kwargs: 0)
-    monkeypatch.setattr(category_module, "save_product_snapshots_if_enabled", lambda **kwargs: 0)
+    monkeypatch.setattr(category_module, "save_products_with_raw_samples_if_enabled", lambda **kwargs: {"rawSampleCount": 0, "snapshotCount": 0})
 
     result = collect_by_categories_parallel(tmp_path, _config(tmp_path), category_workers=2)
 
@@ -565,16 +543,13 @@ def test_incremental_item_limit_stops_after_requested_items(tmp_path):
 
     config = _config(tmp_path)
     import ownerclan_API.workflows.sync_incremental as sync_module
-    original_raw = sync_module.save_product_raw_samples_if_enabled
-    original_snapshots = sync_module.save_product_snapshots_if_enabled
-    sync_module.save_product_raw_samples_if_enabled = lambda **kwargs: 0
-    sync_module.save_product_snapshots_if_enabled = lambda **kwargs: 0
+    original_save = sync_module.save_products_with_raw_samples_if_enabled
+    sync_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: {"rawSampleCount": 0, "snapshotCount": 0}
 
     try:
         result = sync_incremental(tmp_path, config, item_limit=1, client=ManyItemsClient())
     finally:
-        sync_module.save_product_raw_samples_if_enabled = original_raw
-        sync_module.save_product_snapshots_if_enabled = original_snapshots
+        sync_module.save_products_with_raw_samples_if_enabled = original_save
 
     assert result["successCount"] == 1
     assert not (config.output.state_dir / "tracked_products.json").exists()

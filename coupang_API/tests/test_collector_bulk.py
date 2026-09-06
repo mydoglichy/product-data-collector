@@ -55,18 +55,13 @@ def test_bulk_collector_resumes_from_checkpoint_and_saves_to_postgres(tmp_path, 
     )
     FakeClient.calls = []
     FakeClient.failing_keywords = set()
-    saved = {"raw": [], "snapshots": []}
+    saved = []
     monkeypatch.setattr(collector, "load_credentials", lambda root: ("access", "secret"))
     monkeypatch.setattr(collector, "CoupangPartnersClient", FakeClient)
     monkeypatch.setattr(
         collector,
-        "save_product_raw_samples_if_enabled",
-        lambda **kwargs: saved["raw"].append(kwargs) or 1,
-    )
-    monkeypatch.setattr(
-        collector,
-        "save_product_snapshots_if_enabled",
-        lambda **kwargs: saved["snapshots"].append(kwargs) or 1,
+        "save_products_with_raw_samples_if_enabled",
+        lambda **kwargs: saved.append(kwargs) or {"rawSampleCount": 1, "snapshotCount": 1},
     )
 
     exit_code = collector.collect_once(project_root, collector.CollectorConfig(requests_per_minute=40, raw_sample_limit=1))
@@ -79,10 +74,11 @@ def test_bulk_collector_resumes_from_checkpoint_and_saves_to_postgres(tmp_path, 
 
     assert not list((api_dir / "data" / "summaries").glob("*_summary.json"))
     assert not list((api_dir / "data" / "processed").glob("*_products.jsonl"))
-    assert len(saved["raw"]) == 1
-    assert len(saved["snapshots"]) == 1
-    product = list(saved["snapshots"][0]["products"])[0]
-    assert product == {
+    assert len(saved) == 1
+    product = list(saved[0]["products"])[0]
+    comparable_product = dict(product)
+    comparable_product.pop("raw", None)
+    assert comparable_product == {
         "collectedAt": product["collectedAt"],
         "isFreeShipping": True,
         "isRocket": True,
@@ -110,18 +106,13 @@ def test_bulk_collector_dry_run_does_not_write_checkpoint_or_postgres(tmp_path, 
     checkpoint_path = api_dir / "data" / "state" / "product_search_checkpoint.json"
     FakeClient.calls = []
     FakeClient.failing_keywords = set()
-    saved = {"raw": [], "snapshots": []}
+    saved = []
     monkeypatch.setattr(collector, "load_credentials", lambda root: ("access", "secret"))
     monkeypatch.setattr(collector, "CoupangPartnersClient", FakeClient)
     monkeypatch.setattr(
         collector,
-        "save_product_raw_samples_if_enabled",
-        lambda **kwargs: saved["raw"].append(kwargs) or 1,
-    )
-    monkeypatch.setattr(
-        collector,
-        "save_product_snapshots_if_enabled",
-        lambda **kwargs: saved["snapshots"].append(kwargs) or 1,
+        "save_products_with_raw_samples_if_enabled",
+        lambda **kwargs: saved.append(kwargs) or {"rawSampleCount": 1, "snapshotCount": 1},
     )
 
     exit_code = collector.collect_once(
@@ -133,7 +124,7 @@ def test_bulk_collector_dry_run_does_not_write_checkpoint_or_postgres(tmp_path, 
     assert exit_code == 0
     assert [call.keyword for call in FakeClient.calls] == ["new-keyword"]
     assert not checkpoint_path.exists()
-    assert saved == {"raw": [], "snapshots": []}
+    assert saved == []
 
 
 def test_bulk_collector_returns_failure_when_any_keyword_fails(tmp_path, monkeypatch):
@@ -145,8 +136,11 @@ def test_bulk_collector_returns_failure_when_any_keyword_fails(tmp_path, monkeyp
     FakeClient.failing_keywords = {"failed-keyword"}
     monkeypatch.setattr(collector, "load_credentials", lambda root: ("access", "secret"))
     monkeypatch.setattr(collector, "CoupangPartnersClient", FakeClient)
-    monkeypatch.setattr(collector, "save_product_raw_samples_if_enabled", lambda **kwargs: 1)
-    monkeypatch.setattr(collector, "save_product_snapshots_if_enabled", lambda **kwargs: 1)
+    monkeypatch.setattr(
+        collector,
+        "save_products_with_raw_samples_if_enabled",
+        lambda **kwargs: {"rawSampleCount": 1, "snapshotCount": 1},
+    )
 
     exit_code = collector.collect_once(project_root, collector.CollectorConfig(requests_per_minute=40))
 

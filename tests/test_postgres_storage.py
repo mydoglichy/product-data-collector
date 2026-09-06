@@ -5,6 +5,9 @@ from pathlib import Path
 import pytest
 
 from postgres_storage import (
+    _bulk_upsert_discovery_targets,
+    _bulk_upsert_search_ranks,
+    _count_new_discovery_targets,
     _discovery_target_rows,
     _history_insert_plans,
     _history_state,
@@ -622,6 +625,44 @@ def test_search_rank_rows_preserve_same_product_for_different_keywords() -> None
     assert {row["keyword"] for row in rows} == {"bag", "case"}
 
 
+def test_discovery_target_count_uses_existing_ids() -> None:
+    rows = _discovery_target_rows(
+        "domeggook",
+        [
+            {"collectedAt": "2026-08-30T10:00:00Z", "productId": "100"},
+            {"collectedAt": "2026-08-30T10:00:00Z", "productId": "200"},
+        ],
+    )
+    connection = _BulkConnection(existing_ids={"100"})
+
+    assert _count_new_discovery_targets(connection, "domeggook", rows) == 1
+
+
+def test_discovery_and_rank_rows_are_bulk_upserted() -> None:
+    discovery_rows = _discovery_target_rows(
+        "domeggook",
+        [
+            {"collectedAt": "2026-08-30T10:00:00Z", "productId": "100"},
+            {"collectedAt": "2026-08-30T10:00:00Z", "productId": "200"},
+        ],
+    )
+    rank_rows = _search_rank_rows(
+        "domeggook",
+        [
+            {"collectedAt": "2026-08-30T10:00:00Z", "productId": "100", "sort": "ha", "rank": 1},
+            {"collectedAt": "2026-08-30T10:00:00Z", "productId": "200", "sort": "ha", "rank": 2},
+        ],
+    )
+    connection = _BulkConnection()
+
+    _bulk_upsert_discovery_targets(connection, discovery_rows)
+    _bulk_upsert_search_ranks(connection, rank_rows)
+
+    assert len(connection.executemany_calls) == 2
+    assert all("ON CONFLICT" in call["statement"] for call in connection.executemany_calls)
+    assert [len(call["params"]) for call in connection.executemany_calls] == [2, 2]
+
+
 class _SchemaResult:
     def fetchone(self):
         return None
@@ -655,3 +696,37 @@ class _SchemaConnection:
 
     def commit(self) -> None:
         self.committed = True
+
+
+class _FetchAllResult:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def fetchall(self):
+        return self.rows
+
+
+class _BulkCursor:
+    def __init__(self, connection: "_BulkConnection") -> None:
+        self.connection = connection
+
+    def __enter__(self) -> "_BulkCursor":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def executemany(self, statement: str, params) -> None:
+        self.connection.executemany_calls.append({"statement": statement, "params": list(params)})
+
+
+class _BulkConnection:
+    def __init__(self, *, existing_ids=None) -> None:
+        self.existing_ids = set(existing_ids or [])
+        self.executemany_calls = []
+
+    def cursor(self) -> _BulkCursor:
+        return _BulkCursor(self)
+
+    def execute(self, statement: str, params=None) -> _FetchAllResult:
+        return _FetchAllResult([{"external_product_id": value} for value in sorted(self.existing_ids)])

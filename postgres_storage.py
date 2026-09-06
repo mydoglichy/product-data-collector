@@ -161,67 +161,8 @@ def save_discovered_product_ids_if_enabled(
     config = load_postgres_config(project_root)
     with connect(config) as connection:
         init_schema(connection)
-        for row in rows:
-            inserted = connection.execute(
-                """
-                INSERT INTO product_discovery_targets (
-                    platform,
-                    external_product_id,
-                    first_discovered_at,
-                    last_discovered_at,
-                    keyword,
-                    category_code,
-                    category_name,
-                    market,
-                    reason,
-                    payload
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (platform, external_product_id) DO NOTHING
-                RETURNING id
-                """,
-                (
-                    row["platform"],
-                    row["external_product_id"],
-                    row["discovered_at"],
-                    row["discovered_at"],
-                    row["keyword"],
-                    row["category_code"],
-                    row["category_name"],
-                    row["market"],
-                    row["reason"],
-                    Jsonb(_json_safe(row["payload"])),
-                ),
-            ).fetchone()
-            if inserted:
-                inserted_count += 1
-                continue
-            connection.execute(
-                """
-                UPDATE product_discovery_targets
-                SET last_discovered_at = %s,
-                    keyword = COALESCE(%s, keyword),
-                    category_code = COALESCE(%s, category_code),
-                    category_name = COALESCE(%s, category_name),
-                    market = COALESCE(%s, market),
-                    reason = COALESCE(%s, reason),
-                    payload = %s,
-                    active = true,
-                    updated_at = now()
-                WHERE platform = %s AND external_product_id = %s
-                """,
-                (
-                    row["discovered_at"],
-                    row["keyword"],
-                    row["category_code"],
-                    row["category_name"],
-                    row["market"],
-                    row["reason"],
-                    Jsonb(_json_safe(row["payload"])),
-                    row["platform"],
-                    row["external_product_id"],
-                ),
-            )
+        inserted_count = _count_new_discovery_targets(connection, platform, rows)
+        _bulk_upsert_discovery_targets(connection, rows)
         connection.commit()
     if logger is not None:
         logger.info("saved PostgreSQL discovery targets count=%d newCount=%d", len(rows), inserted_count)
@@ -434,6 +375,55 @@ def save_product_snapshots(
     return saved_count
 
 
+def save_products_with_raw_samples_if_enabled(
+    *,
+    project_root: Path,
+    platform: str,
+    collected_at: str,
+    products: Iterable[dict[str, Any]],
+    raw_sample_limit: int,
+    logger: logging.Logger | None = None,
+) -> dict[str, int]:
+    if not postgres_enabled(project_root):
+        return {"rawSampleCount": 0, "snapshotCount": 0}
+    if raw_sample_limit < 0:
+        raise ValueError("raw_sample_limit must be zero or greater")
+
+    product_list = list(products)
+    raw_rows = _raw_sample_rows(platform, collected_at, product_list, raw_sample_limit)
+    snapshot_rows = [_snapshot_row(platform, collected_at, product) for product in _products_without_raw(product_list)]
+    snapshot_rows = [row for row in snapshot_rows if row is not None]
+    if not raw_rows and not snapshot_rows:
+        return {"rawSampleCount": 0, "snapshotCount": 0}
+
+    config = load_postgres_config(project_root)
+    batch_size = _product_batch_size(project_root)
+    snapshot_count = 0
+    with connect(config) as connection:
+        init_schema(connection)
+        if raw_rows:
+            _insert_raw_sample_rows(connection, raw_rows)
+            connection.commit()
+        for batch in _chunks(snapshot_rows, batch_size):
+            try:
+                snapshot_count += _save_product_batch_with_retry(connection, batch)
+            except Exception:
+                LOGGER.exception(
+                    "failed PostgreSQL product batch platform=%s count=%d firstExternalProductId=%s",
+                    platform,
+                    len(batch),
+                    batch[0]["external_product_id"] if batch else "",
+                )
+                connection.rollback()
+    if logger is not None:
+        logger.info(
+            "saved PostgreSQL products rawSampleCount=%d snapshotCount=%d",
+            len(raw_rows),
+            snapshot_count,
+        )
+    return {"rawSampleCount": len(raw_rows), "snapshotCount": snapshot_count}
+
+
 def save_product_snapshots_if_enabled(
     *,
     project_root: Path,
@@ -470,43 +460,14 @@ def save_product_raw_samples_if_enabled(
     if limit < 0:
         raise ValueError("limit must be zero or greater")
 
-    rows: list[dict[str, Any]] = []
-    for product in products:
-        if len(rows) >= min(limit, 3):
-            break
-        raw = product.get("raw")
-        external_id = external_product_id(product)
-        if raw is None or not external_id:
-            continue
-        rows.append(
-            {
-                "platform": platform,
-                "external_product_id": external_id,
-                "collected_at": _parse_datetime(collected_at),
-                "payload": raw,
-            }
-        )
+    rows = _raw_sample_rows(platform, collected_at, products, limit)
     if not rows:
         return 0
 
     config = load_postgres_config(project_root)
     with connect(config) as connection:
         init_schema(connection)
-        for row in rows:
-            connection.execute(
-                """
-                INSERT INTO product_raw_samples (platform, external_product_id, collected_at, payload)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (platform, collected_at, external_product_id) DO UPDATE SET
-                    payload = EXCLUDED.payload
-                """,
-                (
-                    row["platform"],
-                    row["external_product_id"],
-                    row["collected_at"],
-                    Jsonb(_json_safe(row["payload"])),
-                ),
-            )
+        _insert_raw_sample_rows(connection, rows)
         connection.commit()
     if logger is not None:
         logger.info("saved PostgreSQL raw samples count=%d", len(rows))
@@ -530,45 +491,7 @@ def save_search_ranks_if_enabled(
     config = load_postgres_config(project_root)
     with connect(config) as connection:
         init_schema(connection)
-        for row in rows:
-            connection.execute(
-                """
-                INSERT INTO product_search_ranks (
-                    platform,
-                    collected_at,
-                    keyword,
-                    category_code,
-                    category_name,
-                    category_path,
-                    market,
-                    sort,
-                    reason,
-                    external_product_id,
-                    rank,
-                    payload
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (platform, collected_at, keyword, category_code, market, sort, external_product_id, rank) DO UPDATE SET
-                    category_name = EXCLUDED.category_name,
-                    category_path = EXCLUDED.category_path,
-                    reason = EXCLUDED.reason,
-                    payload = EXCLUDED.payload
-                """,
-                (
-                    row["platform"],
-                    row["collected_at"],
-                    row["keyword"],
-                    row["category_code"],
-                    row["category_name"],
-                    Jsonb(_json_safe(row["category_path"])),
-                    row["market"],
-                    row["sort"],
-                    row["reason"],
-                    row["external_product_id"],
-                    row["rank"],
-                    Jsonb(_json_safe(row["payload"])),
-                ),
-            )
+        _bulk_upsert_search_ranks(connection, rows)
         connection.commit()
     if logger is not None:
         logger.info("saved PostgreSQL search ranks count=%d", len(rows))
@@ -605,6 +528,51 @@ def _search_rank_rows(platform: str, records: Iterable[dict[str, Any]]) -> list[
     return rows
 
 
+def _bulk_upsert_search_ranks(connection: Connection[Any], rows: list[dict[str, Any]]) -> None:
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            """
+            INSERT INTO product_search_ranks (
+                platform,
+                collected_at,
+                keyword,
+                category_code,
+                category_name,
+                category_path,
+                market,
+                sort,
+                reason,
+                external_product_id,
+                rank,
+                payload
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (platform, collected_at, keyword, category_code, market, sort, external_product_id, rank) DO UPDATE SET
+                category_name = EXCLUDED.category_name,
+                category_path = EXCLUDED.category_path,
+                reason = EXCLUDED.reason,
+                payload = EXCLUDED.payload
+            """,
+            [
+                (
+                    row["platform"],
+                    row["collected_at"],
+                    row["keyword"],
+                    row["category_code"],
+                    row["category_name"],
+                    Jsonb(_json_safe(row["category_path"])),
+                    row["market"],
+                    row["sort"],
+                    row["reason"],
+                    row["external_product_id"],
+                    row["rank"],
+                    Jsonb(_json_safe(row["payload"])),
+                )
+                for row in rows
+            ],
+        )
+
+
 def _discovery_target_rows(platform: str, records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -631,6 +599,71 @@ def _discovery_target_rows(platform: str, records: Iterable[dict[str, Any]]) -> 
             }
         )
     return rows
+
+
+def _count_new_discovery_targets(
+    connection: Connection[Any],
+    platform: str,
+    rows: list[dict[str, Any]],
+) -> int:
+    external_ids = [row["external_product_id"] for row in rows]
+    existing = connection.execute(
+        """
+        SELECT external_product_id
+        FROM product_discovery_targets
+        WHERE platform = %s
+          AND external_product_id = ANY(%s)
+        """,
+        (platform, external_ids),
+    ).fetchall()
+    existing_ids = {str(row["external_product_id"]) for row in existing}
+    return sum(1 for external_id in external_ids if external_id not in existing_ids)
+
+
+def _bulk_upsert_discovery_targets(connection: Connection[Any], rows: list[dict[str, Any]]) -> None:
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            """
+            INSERT INTO product_discovery_targets (
+                platform,
+                external_product_id,
+                first_discovered_at,
+                last_discovered_at,
+                keyword,
+                category_code,
+                category_name,
+                market,
+                reason,
+                payload
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (platform, external_product_id) DO UPDATE SET
+                last_discovered_at = EXCLUDED.last_discovered_at,
+                keyword = COALESCE(EXCLUDED.keyword, product_discovery_targets.keyword),
+                category_code = COALESCE(EXCLUDED.category_code, product_discovery_targets.category_code),
+                category_name = COALESCE(EXCLUDED.category_name, product_discovery_targets.category_name),
+                market = COALESCE(EXCLUDED.market, product_discovery_targets.market),
+                reason = COALESCE(EXCLUDED.reason, product_discovery_targets.reason),
+                payload = EXCLUDED.payload,
+                active = true,
+                updated_at = now()
+            """,
+            [
+                (
+                    row["platform"],
+                    row["external_product_id"],
+                    row["discovered_at"],
+                    row["discovered_at"],
+                    row["keyword"],
+                    row["category_code"],
+                    row["category_name"],
+                    row["market"],
+                    row["reason"],
+                    Jsonb(_json_safe(row["payload"])),
+                )
+                for row in rows
+            ],
+        )
 
 
 def _positive_int(value: Any) -> int | None:
@@ -665,6 +698,59 @@ def _product_batch_size(project_root: Path | None = None) -> int:
 def _chunks(rows: list[dict[str, Any]], size: int) -> Iterator[list[dict[str, Any]]]:
     for index in range(0, len(rows), size):
         yield rows[index : index + size]
+
+
+def _products_without_raw(products: Iterable[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+    for product in products:
+        result = dict(product)
+        result.pop("raw", None)
+        yield result
+
+
+def _raw_sample_rows(
+    platform: str,
+    collected_at: str,
+    products: Iterable[dict[str, Any]],
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for product in products:
+        if len(rows) >= min(limit, 3):
+            break
+        raw = product.get("raw")
+        external_id = external_product_id(product)
+        if raw is None or not external_id:
+            continue
+        rows.append(
+            {
+                "platform": platform,
+                "external_product_id": external_id,
+                "collected_at": _parse_datetime(collected_at),
+                "payload": raw,
+            }
+        )
+    return rows
+
+
+def _insert_raw_sample_rows(connection: Connection[Any], rows: list[dict[str, Any]]) -> None:
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            """
+            INSERT INTO product_raw_samples (platform, external_product_id, collected_at, payload)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (platform, collected_at, external_product_id) DO UPDATE SET
+                payload = EXCLUDED.payload
+            """,
+            [
+                (
+                    row["platform"],
+                    row["external_product_id"],
+                    row["collected_at"],
+                    Jsonb(_json_safe(row["payload"])),
+                )
+                for row in rows
+            ],
+        )
 
 
 def _save_product_batch_with_retry(connection: Connection[Any], rows: list[dict[str, Any]]) -> int:

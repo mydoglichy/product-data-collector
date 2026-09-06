@@ -9,7 +9,7 @@ from pathlib import Path
 from threading import Event, Lock
 from typing import Any
 
-from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
+from postgres_storage import save_products_with_raw_samples_if_enabled
 
 from ..services.categories import load_or_refresh_leaf_categories
 from ..api.client import OwnerclanGraphQLError, OwnerclanHttpError
@@ -484,19 +484,12 @@ def _save_ownerclan_category_page(
     collected_at: str,
     products: dict[str, dict[str, Any]],
 ) -> None:
-    save_product_raw_samples_if_enabled(
+    save_products_with_raw_samples_if_enabled(
         project_root=project_root,
         platform="ownerclan",
         collected_at=collected_at,
         products=products.values(),
-        limit=config.output.raw_sample_limit,
-        logger=LOGGER,
-    )
-    save_product_snapshots_if_enabled(
-        project_root=project_root,
-        platform="ownerclan",
-        collected_at=collected_at,
-        products=(_without_raw(product) for product in products.values()),
+        raw_sample_limit=config.output.raw_sample_limit,
         logger=LOGGER,
     )
 
@@ -515,12 +508,6 @@ def _next_category_key(categories: list[dict[str, Any]], index: int) -> str | No
         return None
     key = categories[index + 1].get("key")
     return str(key) if key not in (None, "") else None
-
-
-def _without_raw(product: dict[str, Any]) -> dict[str, Any]:
-    result = dict(product)
-    result.pop("raw", None)
-    return result
 
 
 def _is_rate_limit_exception(exc: Exception) -> bool:
