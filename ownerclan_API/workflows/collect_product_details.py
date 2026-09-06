@@ -1,15 +1,14 @@
 ﻿from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 import logging
 import re
 import sys
 from pathlib import Path
 from typing import Any
 
-from postgres_storage import discovered_product_ids, save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
+from collection_state import item_list_hash, resume_index
+from postgres_storage import discovered_product_ids, save_products_with_raw_samples_if_enabled
 
 from ..api.client import OwnerclanGraphQLError
 from ..config import OwnerclanConfig, find_project_root, load_config
@@ -42,8 +41,8 @@ def collect_details(
     state_path = config.output.state_dir / "detail-collection-state.json"
     state = load_state(state_path)
     collected_at = str(state.get("runCollectedAt") or now_iso(config.timezone))
-    list_hash = _product_list_hash(product_keys)
-    start_index = _resume_index(product_keys, state, list_hash)
+    list_hash = item_list_hash(product_keys)
+    start_index = resume_index(product_keys, state, list_hash)
     failures: list[dict[str, Any]] = []
     fallback_count = 0
     success_count = 0
@@ -103,47 +102,14 @@ def _save_ownerclan_detail_batch(
     collected_at: str,
     products: dict[str, dict[str, Any]],
 ) -> None:
-    save_product_raw_samples_if_enabled(
+    save_products_with_raw_samples_if_enabled(
         project_root=project_root,
         platform="ownerclan",
         collected_at=collected_at,
         products=products.values(),
-        limit=config.output.raw_sample_limit,
+        raw_sample_limit=config.output.raw_sample_limit,
         logger=LOGGER,
     )
-    save_product_snapshots_if_enabled(
-        project_root=project_root,
-        platform="ownerclan",
-        collected_at=collected_at,
-        products=(_without_raw(product) for product in products.values()),
-        logger=LOGGER,
-    )
-
-
-def _product_list_hash(product_keys: list[str]) -> str:
-    payload = json.dumps(product_keys, ensure_ascii=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _resume_index(product_keys: list[str], state: dict[str, Any], list_hash: str) -> int:
-    if state.get("trackedListHash") == list_hash:
-        try:
-            return min(max(int(state.get("nextIndex", 0)), 0), len(product_keys))
-        except (TypeError, ValueError):
-            return 0
-    last_completed = state.get("lastCompletedProductId")
-    if last_completed in (None, ""):
-        return 0
-    try:
-        return product_keys.index(str(last_completed)) + 1
-    except ValueError:
-        return 0
-
-
-def _without_raw(product: dict[str, Any]) -> dict[str, Any]:
-    result = dict(product)
-    result.pop("raw", None)
-    return result
 
 
 def fetch_items_batch(client: Any, keys: list[str]) -> list[dict[str, Any]]:

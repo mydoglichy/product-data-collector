@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
+from postgres_storage import save_products_with_raw_samples_if_enabled
 
 from ..api.client import OwnerclanGraphQLError, OwnerclanHttpError
 from ..config import OwnerclanConfig, find_project_root, load_config
@@ -120,19 +120,12 @@ def sync_incremental(
             LOGGER.error("ownerclan itemHistories sync failed error=%s", exc)
 
     if not dry_run:
-        save_product_raw_samples_if_enabled(
+        save_products_with_raw_samples_if_enabled(
             project_root=project_root,
             platform="ownerclan",
             collected_at=collected_at,
             products=products,
-            limit=config.output.raw_sample_limit,
-            logger=LOGGER,
-        )
-        save_product_snapshots_if_enabled(
-            project_root=project_root,
-            platform="ownerclan",
-            collected_at=collected_at,
-            products=(_without_raw(product) for product in products),
+            raw_sample_limit=config.output.raw_sample_limit,
             logger=LOGGER,
         )
         if completed and not failures:
@@ -147,12 +140,6 @@ def sync_incremental(
         "rateLimitFailureCount": rate_limit_failures,
         "stateUpdated": 1 if completed and not failures and not dry_run else 0,
     }
-
-
-def _without_raw(product: dict[str, Any]) -> dict[str, Any]:
-    result = dict(product)
-    result.pop("raw", None)
-    return result
 
 
 def _is_rate_limit_exception(exc: Exception) -> bool:

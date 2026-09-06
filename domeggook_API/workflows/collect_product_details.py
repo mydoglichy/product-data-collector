@@ -1,18 +1,17 @@
 ﻿from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 import logging
 import sys
 import time
 from pathlib import Path
 
+from collection_state import item_list_hash, resume_index
 from ..api.client import DomeggookApiError, DomeggookClient, create_domeggook_client
 from ..config import DomeggookConfig, find_project_root, load_api_keys, load_config
 from ..services.logging_config import configure_logging
 from ..services.parsing import parse_detail_products
-from postgres_storage import discovered_product_ids, save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
+from postgres_storage import discovered_product_ids, save_products_with_raw_samples_if_enabled
 from .run_budget import RunBudget
 
 from ..persistence.storage import (
@@ -46,8 +45,8 @@ def collect_details(
     state_path = data_dir / "state" / "detail-collection-state.json"
     state = load_state(state_path)
     collected_at = str(state.get("runCollectedAt") or now_iso(config.timezone))
-    list_hash = _product_list_hash(product_ids)
-    start_index = _resume_index(product_ids, state, list_hash)
+    list_hash = item_list_hash(product_ids)
+    start_index = resume_index(product_ids, state, list_hash)
     failures: list[dict[str, object]] = []
     raw_remaining = _raw_remaining(state, config.details.raw_sample_limit)
     success_count = 0
@@ -150,41 +149,14 @@ def _save_domeggook_detail_batch(
     products: dict[str, dict[str, object]],
     raw_limit: int,
 ) -> None:
-    save_product_raw_samples_if_enabled(
+    save_products_with_raw_samples_if_enabled(
         project_root=project_root,
         platform="domeggook",
         collected_at=collected_at,
         products=products.values(),
-        limit=raw_limit,
+        raw_sample_limit=raw_limit,
         logger=LOGGER,
     )
-    save_product_snapshots_if_enabled(
-        project_root=project_root,
-        platform="domeggook",
-        collected_at=collected_at,
-        products=(_without_raw(product) for product in products.values()),
-        logger=LOGGER,
-    )
-
-
-def _product_list_hash(product_ids: list[str]) -> str:
-    payload = json.dumps(product_ids, ensure_ascii=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _resume_index(product_ids: list[str], state: dict[str, object], list_hash: str) -> int:
-    if state.get("trackedListHash") == list_hash:
-        try:
-            return min(max(int(state.get("nextIndex", 0)), 0), len(product_ids))
-        except (TypeError, ValueError):
-            return 0
-    last_completed = state.get("lastCompletedProductId")
-    if last_completed in (None, ""):
-        return 0
-    try:
-        return product_ids.index(str(last_completed)) + 1
-    except ValueError:
-        return 0
 
 
 def _raw_remaining(state: dict[str, object], default: int) -> int:
@@ -192,12 +164,6 @@ def _raw_remaining(state: dict[str, object], default: int) -> int:
         return min(max(int(state.get("rawRemaining", default)), 0), default)
     except (TypeError, ValueError):
         return default
-
-
-def _without_raw(product: dict[str, object]) -> dict[str, object]:
-    result = dict(product)
-    result.pop("raw", None)
-    return result
 
 
 def _deadline_reached(deadline_monotonic: float | None) -> bool:
