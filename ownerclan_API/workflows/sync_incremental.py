@@ -134,6 +134,7 @@ def sync_incremental(
 
     return {
         "pageCount": pages,
+        "collectedProductCount": len(products),
         "successCount": len(products),
         "historyCount": len(histories),
         "failureCount": len(failures),

@@ -62,6 +62,7 @@ def test_discover_uses_all_market_and_sort_combinations_without_real_api(tmp_pat
     assert {request.category_code for request in client.list_requests} == {"01_01_00_00_00"}
     assert result["categoryCount"] == 1
     assert result["discoveredCount"] == 12
+    assert result["uniqueProductCount"] == 2
     assert result["newProductCount"] == 2
     assert {record["productId"] for record in saved_targets} == {"100", "200"}
     assert {record["categoryName"] for record in saved_targets} == {"bag"}
@@ -298,6 +299,7 @@ def test_da_discovery_products_remain_detail_targets(tmp_path, monkeypatch):
     )
     result = collect_details(tmp_path, config, client=client)
 
+    assert result["collectedProductCount"] == 2
     assert result["successCount"] == 2
     assert client.detail_requests == [["100", "200"]]
 
@@ -316,6 +318,7 @@ def test_collect_details_batches_and_writes_snapshot_without_real_api(tmp_path, 
     result = collect_details(tmp_path, config, client=client)
 
     assert [len(batch) for batch in client.detail_requests] == [100, 100, 5]
+    assert result["collectedProductCount"] == 205
     assert result["successCount"] == 205
     assert result["failureCount"] == 0
 
@@ -446,6 +449,7 @@ def test_collect_details_retries_invalid_json_batch_before_failing(tmp_path, mon
     client = InvalidJsonOnceClient()
     result = collect_details(tmp_path, _config(), client=client)
 
+    assert result["collectedProductCount"] == 2
     assert result["successCount"] == 2
     assert result["failureCount"] == 0
     assert client.detail_requests == [["100", "200"], ["100", "200"]]

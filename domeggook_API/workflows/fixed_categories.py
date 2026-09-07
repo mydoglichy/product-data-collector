@@ -538,6 +538,7 @@ def _deadline_reached(deadline_monotonic: float | None) -> bool:
 def _empty_details(discovery: dict[str, int]) -> dict[str, int]:
     return {
         "trackedCount": 0,
+        "collectedProductCount": 0,
         "successCount": 0,
         "failureCount": int(discovery.get("failureCount") or 0),
         "runtimeLimitReached": int(discovery.get("runtimeLimitReached") or 0),

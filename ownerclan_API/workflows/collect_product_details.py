@@ -45,7 +45,7 @@ def collect_details(
     start_index = resume_index(product_keys, state, list_hash)
     failures: list[dict[str, Any]] = []
     fallback_count = 0
-    success_count = 0
+    collected_product_count = 0
 
     for index in range(start_index, len(product_keys), config.details.batch_size):
         batch = product_keys[index : index + config.details.batch_size]
@@ -67,7 +67,7 @@ def collect_details(
                 collected_at=collected_at,
                 products=unique_products,
             )
-        success_count += len(unique_products)
+        collected_product_count += len(unique_products)
         if getattr(client, "last_detail_strategy", None) in {"itemsByKeys", "item"}:
             fallback_count += 1
         if missing:
@@ -89,7 +89,8 @@ def collect_details(
 
     return {
         "trackedCount": len(product_keys),
-        "successCount": success_count,
+        "collectedProductCount": collected_product_count,
+        "successCount": collected_product_count,
         "failureCount": len(failures),
         "fallbackBatchCount": fallback_count,
     }

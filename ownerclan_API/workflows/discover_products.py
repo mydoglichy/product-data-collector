@@ -34,7 +34,7 @@ def discover(
     client = client or make_client(project_root, config)
 
     discovered = 0
-    new_products = 0
+    run_unique_product_count = 0
     failures = 0
     discovery_target_records: list[dict[str, Any]] = []
     seen_product_keys: set[str] = set()
@@ -69,7 +69,7 @@ def discover(
                 discovered += 1
                 if product_key not in seen_product_keys:
                     seen_product_keys.add(product_key)
-                    new_products += 1
+                    run_unique_product_count += 1
                 discovery_target_records.append(
                     {
                         "collectedAt": collected_at,
@@ -90,7 +90,8 @@ def discover(
     return {
         "keywordCount": len(keywords),
         "discoveredCount": discovered,
-        "newProductCount": new_products,
+        "uniqueProductCount": run_unique_product_count,
+        "newProductCount": run_unique_product_count,
         "trackedCount": 0,
         "failureCount": failures,
     }

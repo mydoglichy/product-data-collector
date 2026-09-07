@@ -25,7 +25,7 @@ def discover(
     project_root: Path,
     config: DomeggookConfig,
     *,
-    keyword_limit: int | None = None,
+    category_limit: int | None = None,
     page_limit: int | None = None,
     deadline_monotonic: float | None = None,
     run_budget: RunBudget | None = None,
@@ -41,14 +41,14 @@ def discover(
 
     data_dir = project_root / "domeggook_API" / "data"
     categories = load_or_refresh_categories(data_dir / "state" / "categories.json", client, dry_run=dry_run)
-    if keyword_limit is not None:
-        categories = categories[:keyword_limit]
+    if category_limit is not None:
+        categories = categories[:category_limit]
 
     state_path = data_dir / "state" / state_filename
     state = load_state(state_path)
     run_collected_at = str(state.get("runCollectedAt") or now_iso(config.timezone))
     discovered = 0
-    new_products = 0
+    run_unique_product_count = 0
     seen_product_ids: set[str] = set()
     failures = 0
     stopped_on_failure = False
@@ -134,7 +134,7 @@ def discover(
                 discovered += 1
                 if product_id not in seen_product_ids:
                     seen_product_ids.add(product_id)
-                    new_products += 1
+                    run_unique_product_count += 1
                 discovery_target_records.append(
                     {
                         "collectedAt": collected_at,
@@ -211,7 +211,8 @@ def discover(
         "categoryCount": len(categories),
         "pageCount": page_count,
         "discoveredCount": discovered,
-        "newProductCount": new_products,
+        "uniqueProductCount": run_unique_product_count,
+        "newProductCount": run_unique_product_count,
         "insertedTargetCount": inserted_target_count,
         "trackedCount": 0,
         "failureCount": failures,
@@ -331,7 +332,7 @@ def main(argv: list[str] | None = None) -> int:
     project_root = find_project_root(Path.cwd())
     configure_logging(project_root / "domeggook_API" / "data" / "logs")
     config = load_config(Path(args.config) if args.config else project_root / "domeggook_API" / "config" / "config.yaml")
-    result = discover(project_root, config, keyword_limit=args.limit, page_limit=args.page_limit, dry_run=args.dry_run)
+    result = discover(project_root, config, category_limit=args.limit, page_limit=args.page_limit, dry_run=args.dry_run)
     print(result)
     return 1 if result["failureCount"] and not result["discoveredCount"] else 0
 

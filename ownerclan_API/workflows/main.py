@@ -16,6 +16,7 @@ from .sync_incremental import sync_incremental
 LOGGER = logging.getLogger("ownerclan_API.workflows.main")
 EMPTY_INCREMENTAL_RESULT = {
     "pageCount": 0,
+    "collectedProductCount": 0,
     "successCount": 0,
     "historyCount": 0,
     "failureCount": 0,

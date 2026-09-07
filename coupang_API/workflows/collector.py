@@ -31,7 +31,7 @@ def collect_once(project_root: Path, config: CollectorConfig, *, dry_run: bool =
     success_keywords: list[str] = []
     failure_keywords: list[str] = []
     skipped_keywords = [keyword for keyword in keywords if checkpoint.is_completed(keyword)]
-    total_products = 0
+    keyword_scoped_product_count = 0
     duplicate_products = 0
     raw_saved_count = 0
     raw_sample_limit = min(config.raw_sample_limit, 3)
@@ -65,7 +65,7 @@ def collect_once(project_root: Path, config: CollectorConfig, *, dry_run: bool =
             )
             unique_records = dedupe_records(records)
             duplicates = len(records) - len(unique_records)
-            total_products += len(unique_records)
+            keyword_scoped_product_count += len(unique_records)
             duplicate_products += duplicates
             for record in unique_records:
                 product_id = record.get("productId")
@@ -81,7 +81,7 @@ def collect_once(project_root: Path, config: CollectorConfig, *, dry_run: bool =
             if not dry_run:
                 checkpoint.mark_completed(keyword)
             success_keywords.append(keyword)
-            LOGGER.info("success keyword=%r products=%d duplicates=%d", keyword, len(unique_records), duplicates)
+            LOGGER.info("success keyword=%r keywordScopedProducts=%d duplicates=%d", keyword, len(unique_records), duplicates)
         except CoupangApiError as exc:
             failure_keywords.append(keyword)
             LOGGER.error("failed keyword=%r error=%s", keyword, exc)
@@ -112,7 +112,8 @@ def collect_once(project_root: Path, config: CollectorConfig, *, dry_run: bool =
         "processedKeywords": len(success_keywords) + len(failure_keywords),
         "successCount": len(success_keywords),
         "failureCount": len(failure_keywords),
-        "collectedProductCount": total_products,
+        "collectedProductCount": len(collected_products),
+        "keywordScopedProductCount": keyword_scoped_product_count,
         "duplicateProductCount": duplicate_products,
         "rawSampleLimit": config.raw_sample_limit,
         "rawSavedCount": raw_saved_count,
@@ -121,12 +122,13 @@ def collect_once(project_root: Path, config: CollectorConfig, *, dry_run: bool =
         "source": "coupang_partners_product_search",
     }
     LOGGER.info(
-        "finished collection total=%d processed=%d success=%d failure=%d products=%d duplicates=%d",
+        "finished collection total=%d processed=%d success=%d failure=%d collectedProducts=%d keywordScopedProducts=%d duplicates=%d",
         len(keywords),
         summary["processedKeywords"],
         len(success_keywords),
         len(failure_keywords),
-        total_products,
+        len(collected_products),
+        keyword_scoped_product_count,
         duplicate_products,
     )
     if success_keywords:

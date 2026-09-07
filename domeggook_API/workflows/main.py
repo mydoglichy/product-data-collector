@@ -77,6 +77,7 @@ def run(
                 "categoryCount": 0,
                 "pageCount": 0,
                 "discoveredCount": 0,
+                "uniqueProductCount": 0,
                 "newProductCount": 0,
                 "trackedCount": 0,
                 "failureCount": 0,
@@ -88,7 +89,7 @@ def run(
             discovery = discover(
                 project_root,
                 config,
-                keyword_limit=limit,
+                category_limit=limit,
                 page_limit=page_limit,
                 deadline_monotonic=deadline_monotonic,
                 run_budget=run_budget,
@@ -98,6 +99,7 @@ def run(
         if int(discovery.get("runtimeLimitReached") or 0) or int(discovery.get("dailyRequestLimitReached") or 0):
             details = {
                 "trackedCount": 0,
+                "collectedProductCount": 0,
                 "successCount": 0,
                 "failureCount": 0,
                 "runtimeLimitReached": int(discovery.get("runtimeLimitReached") or 0),
@@ -157,6 +159,7 @@ def _empty_recent_discovery(reason: str) -> dict[str, int | str]:
         "categoryCount": 0,
         "pageCount": 0,
         "discoveredCount": 0,
+        "uniqueProductCount": 0,
         "newProductCount": 0,
         "insertedTargetCount": 0,
         "trackedCount": 0,
