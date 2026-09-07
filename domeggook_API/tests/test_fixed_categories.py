@@ -115,6 +115,7 @@ def test_collect_fixed_category_products_discovers_then_collects_only_fixed_ids(
         "02_01_00_00_00",
     ]
     assert result["discovery"]["uniqueProductCount"] == 6
+    assert result["details"]["collectedProductCount"] == 6
     assert result["details"]["successCount"] == 6
     assert [len(batch) for batch in client.detail_requests] == [6]
     assert {record["reason"] for record in saved_targets} == {"fixed_category_full"}
@@ -159,6 +160,7 @@ def test_collect_fixed_category_products_limits_unique_products_per_category(tmp
     assert [request.market for request in client.list_requests] == ["dome", "dome", "dome", "dome"]
     assert result["discovery"]["perCategoryProductLimit"] == 3
     assert result["discovery"]["uniqueProductCount"] == 6
+    assert result["details"]["collectedProductCount"] == 6
     assert result["details"]["successCount"] == 6
     assert {record["reason"] for record in saved_targets} == {"fixed_category_sample"}
 

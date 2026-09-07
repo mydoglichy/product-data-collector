@@ -86,6 +86,7 @@ def test_keyword_default_and_new_search_and_dedupes_product_keys(tmp_path):
         discover_module.save_discovered_product_ids_if_enabled = original_save_targets
 
     assert result["discoveredCount"] == 4
+    assert result["uniqueProductCount"] == 2
     assert result["newProductCount"] == 2
     assert len(client.queries) == 2
     assert "sortBy:" not in client.queries[0]
@@ -111,6 +112,7 @@ def test_category_collection_refreshes_leaf_cache_and_saves_products(tmp_path):
 
     assert result["categoryCount"] == 1
     assert result["pageCount"] == 1
+    assert result["collectedProductCount"] == 2
     assert result["successCount"] == 2
     assert config.output.category_cache_path.exists()
     cached = load_json_object(config.output.category_cache_path)
@@ -221,6 +223,7 @@ def test_collect_details_saves_products_to_postgres_without_json_outputs(tmp_pat
         collect_module.save_products_with_raw_samples_if_enabled = original_save
         collect_module.discovered_product_ids = original_targets
 
+    assert result["collectedProductCount"] == 2
     assert result["successCount"] == 2
     assert len(saved) == 1
     saved_products = list(saved[0]["products"])
@@ -306,6 +309,7 @@ def test_cursor_pagination_and_repeated_cursor_stops(tmp_path):
         sync_module.save_products_with_raw_samples_if_enabled = original_save
 
     assert result["pageCount"] == 2
+    assert result["collectedProductCount"] == 2
     assert result["successCount"] == 2
     state = load_json_object(config.output.state_dir / "incremental-state.json")
     assert state["lastSuccessfulItemSyncAt"]

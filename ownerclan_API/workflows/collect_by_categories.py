@@ -53,7 +53,7 @@ def collect_by_categories(
     failures: list[dict[str, Any]] = []
     rate_limit_failures = 0
     category_pages = 0
-    success_count = 0
+    collected_product_count = 0
 
     start_index = _category_start_index(categories, resume_category_key)
     with ThreadPoolExecutor(max_workers=1) as save_executor:
@@ -99,7 +99,8 @@ def collect_by_categories(
                     return {
                         "categoryCount": len(categories),
                         "pageCount": category_pages,
-                        "successCount": success_count,
+                        "collectedProductCount": collected_product_count,
+                        "successCount": collected_product_count,
                         "trackedCount": 0,
                         "failureCount": len(failures),
                         "rateLimitFailureCount": rate_limit_failures,
@@ -116,14 +117,14 @@ def collect_by_categories(
                         continue
                     product = normalize_item(item, collected_at)
                     page_products_by_key[product_key] = product
-                    if item_limit is not None and success_count + len(page_products_by_key) >= item_limit:
+                    if item_limit is not None and collected_product_count + len(page_products_by_key) >= item_limit:
                         break
 
                 next_cursor = page_info.get("endCursor")
                 should_stop = False
                 state_after_save: dict[str, Any] | None = None
 
-                if item_limit is not None and success_count + len(page_products_by_key) >= item_limit:
+                if item_limit is not None and collected_product_count + len(page_products_by_key) >= item_limit:
                     state_after_save = {"runCollectedAt": collected_at, "categoryKey": category_key, "after": after}
                     should_stop = True
                 elif not page_info.get("hasNextPage") or not next_cursor:
@@ -163,7 +164,7 @@ def collect_by_categories(
                         state_path=state_path,
                         state=state_after_save,
                     )
-                success_count += len(page_products_by_key)
+                collected_product_count += len(page_products_by_key)
 
                 if should_stop:
                     if pending_save is not None:
@@ -176,7 +177,7 @@ def collect_by_categories(
 
             resume_category_key = None
             resume_after = None
-            if item_limit is not None and success_count >= item_limit:
+            if item_limit is not None and collected_product_count >= item_limit:
                 break
             if page_limit is not None and category_pages >= page_limit:
                 break
@@ -190,7 +191,8 @@ def collect_by_categories(
     return {
         "categoryCount": len(categories),
         "pageCount": category_pages,
-        "successCount": success_count,
+        "collectedProductCount": collected_product_count,
+        "successCount": collected_product_count,
         "trackedCount": 0,
         "failureCount": len(failures),
         "rateLimitFailureCount": rate_limit_failures,
@@ -251,7 +253,7 @@ def collect_by_categories_parallel(
     counters_lock = Lock()
     counters = {
         "pageCount": 0,
-        "successCount": 0,
+        "collectedProductCount": 0,
         "failureCount": 0,
         "rateLimitFailureCount": 0,
     }
@@ -306,7 +308,7 @@ def collect_by_categories_parallel(
                     )
                     with counters_lock:
                         counters["pageCount"] += page_count
-                        counters["successCount"] += item_count
+                        counters["collectedProductCount"] += item_count
                 except Exception as exc:
                     if pending_save_ref[0] is not None:
                         pending_save_ref[0].result()
@@ -350,7 +352,8 @@ def collect_by_categories_parallel(
     return {
         "categoryCount": len(categories),
         "pageCount": counters["pageCount"],
-        "successCount": counters["successCount"],
+        "collectedProductCount": counters["collectedProductCount"],
+        "successCount": counters["collectedProductCount"],
         "trackedCount": 0,
         "failureCount": counters["failureCount"],
         "rateLimitFailureCount": counters["rateLimitFailureCount"],

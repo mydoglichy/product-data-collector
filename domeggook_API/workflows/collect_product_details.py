@@ -55,7 +55,7 @@ def collect_details(
     start_index = resume_index(product_ids, state, list_hash)
     failures: list[dict[str, object]] = []
     raw_remaining = _raw_remaining(state, config.details.raw_sample_limit)
-    success_count = 0
+    collected_product_count = 0
     stopped_on_runtime_limit = False
     stopped_on_daily_request_limit = False
 
@@ -121,7 +121,7 @@ def collect_details(
                 products=unique_products,
                 raw_limit=raw_remaining,
             )
-        success_count += len(unique_products)
+        collected_product_count += len(unique_products)
         raw_remaining = max(raw_remaining - len(unique_products), 0)
         if parsed_failures:
             break
@@ -143,7 +143,8 @@ def collect_details(
 
     return {
         "trackedCount": len(product_ids),
-        "successCount": success_count,
+        "collectedProductCount": collected_product_count,
+        "successCount": collected_product_count,
         "failureCount": len(failures),
         "runtimeLimitReached": int(stopped_on_runtime_limit),
         "dailyRequestLimitReached": int(stopped_on_daily_request_limit),

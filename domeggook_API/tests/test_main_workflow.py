@@ -23,7 +23,7 @@ def test_run_skips_discovery_when_detail_state_is_pending(tmp_path, monkeypatch)
 
     def fake_collect_details(*args, **kwargs):
         calls["details"] += 1
-        return {"trackedCount": 200, "successCount": 100, "failureCount": 0}
+        return {"trackedCount": 200, "collectedProductCount": 100, "successCount": 100, "failureCount": 0}
 
     monkeypatch.setattr("domeggook_API.workflows.main.discover", fake_discover)
     monkeypatch.setattr("domeggook_API.workflows.main.collect_details", fake_collect_details)
@@ -32,6 +32,7 @@ def test_run_skips_discovery_when_detail_state_is_pending(tmp_path, monkeypatch)
 
     assert calls == {"discover": 0, "details": 1}
     assert result["discovery"]["skippedBecauseDetailResume"] == 1
+    assert result["details"]["collectedProductCount"] == 100
     assert result["details"]["successCount"] == 100
 
 
@@ -44,7 +45,7 @@ def test_daily_mode_collects_details_before_recent_discovery(tmp_path, monkeypat
 
     def fake_collect_details(*args, **kwargs):
         calls.append(("details", kwargs))
-        return {"trackedCount": 200, "successCount": 200, "failureCount": 0}
+        return {"trackedCount": 200, "collectedProductCount": 200, "successCount": 200, "failureCount": 0}
 
     def fake_discover(*args, **kwargs):
         calls.append(("recent", kwargs))
@@ -52,6 +53,7 @@ def test_daily_mode_collects_details_before_recent_discovery(tmp_path, monkeypat
             "categoryCount": 1,
             "pageCount": 2,
             "discoveredCount": 40,
+            "uniqueProductCount": 40,
             "newProductCount": 40,
             "insertedTargetCount": 3,
             "trackedCount": 0,
@@ -82,6 +84,7 @@ def test_daily_mode_skips_recent_discovery_when_detail_collection_pauses(tmp_pat
         "domeggook_API.workflows.main.collect_details",
         lambda *args, **kwargs: {
             "trackedCount": 200,
+            "collectedProductCount": 100,
             "successCount": 100,
             "failureCount": 0,
             "runtimeLimitReached": 0,
