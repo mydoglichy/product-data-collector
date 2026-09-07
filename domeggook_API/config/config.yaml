@@ -6,10 +6,10 @@ discovery:
     popular: ha
     ranking: rd
     recent: da
-  items_per_keyword: 20
+  list_page_size: 150
 
 details:
-  batch_size: 100
+  batch_size: 50
   raw_sample_limit: 3
 
 request:

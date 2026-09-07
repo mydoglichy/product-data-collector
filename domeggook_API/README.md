@@ -27,7 +27,7 @@ python scripts\run_daily_collector.py --platform domeggook
 - discovery 대상 market: `dome`, `supply`
 - 순위 저장 대상 sort: `ha`, `rd`
 - 최근 상품 보강 sort: `da`
-- 상세 batch size: `100`
+- 상세 batch size: `50`
 - raw sample limit: `3`
 - API 예산: 분당 `120`, 시간당 `9000`, 일당 `14000`
 

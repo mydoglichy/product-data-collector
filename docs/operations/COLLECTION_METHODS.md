@@ -74,7 +74,24 @@ worker는 서로 다른 카테고리를 동시에 맡습니다. 같은 카테고
 7. 발견한 상품 ID는 PostgreSQL `product_discovery_targets`에 저장합니다.
 8. `ha`, `rd`처럼 순위 의미가 있는 sort만 `product_search_ranks`에 저장합니다. `da`는 최근 등록/수정일 기준이라 ranking history로 저장하지 않습니다.
 
-상세 수집은 `product_discovery_targets`에서 active 상품 ID를 읽고 `getItemView`를 batch size 100으로 호출해 상품 master와 변경된 핵심 history를 저장합니다.
+상세 수집은 `product_discovery_targets`에서 active 상품 ID를 읽고 `getItemView`를 batch size 50으로 호출해 상품 master와 변경된 핵심 history를 저장합니다. 도매꾹 API가 간헐적으로 HTTP 200이지만 JSON이 아닌 본문을 반환하는 경우가 있어, 한 번에 묶는 상품 수를 100에서 50으로 낮췄습니다. `invalid_json`이 발생하면 같은 detail batch를 10초, 20초, 30초 간격으로 재시도하고, 그래도 실패할 때만 상태 파일을 남긴 뒤 멈춥니다.
+
+### Fixed Category Sample
+
+변화율과 신규상품 감지 테스트는 별도 fixed category workflow를 사용합니다. 이 workflow는 고정된 최하위 카테고리 목록을 기준으로 수집하고, 기존 전체 수집과 섞이지 않도록 `reason`을 분리합니다.
+
+```powershell
+python -m domeggook_API.workflows.fixed_categories save-categories --count 50
+python -m domeggook_API.workflows.fixed_categories collect --sort rd --per-category-product-limit 200 --max-runtime-hours 3
+python -m domeggook_API.workflows.fixed_categories collect --sort da --per-category-product-limit 200 --discovery-only --max-runtime-hours 3
+```
+
+- `sort=rd`: 같은 샘플 상품의 가격/재고/배송/상태 변화율 분석용입니다. 상세 상품 상태까지 저장합니다.
+- `sort=da`: 신규상품 ID 감지용입니다. `--discovery-only`를 사용하면 상세조회 없이 상품 ID만 저장합니다.
+- `reason=fixed_category_sample`: 샘플 수집 데이터입니다.
+- `reason=fixed_category_full`: 고정 카테고리 전체 수집 데이터입니다.
+
+샘플 resume state는 sort와 limit별로 분리됩니다. 예: `fixed-category-discovery-rd-limit-200-state.json`, `fixed-category-discovery-da-limit-200-state.json`.
 
 ### 운영 모드
 
@@ -107,7 +124,7 @@ python scripts\run_daily_collector.py --platform domeggook --domeggook-recent-pa
 - `max_requests_per_day=14000`
 - request timeout: 20초
 - request retry: 3회
-- 상세 batch size: 100
+- 상세 batch size: 50
 
 `DomeggookClient`는 API key별 `RateLimiter`를 만들고, 분/시/일 3개 rolling window를 동시에 적용합니다. API key가 여러 개면 key를 round-robin으로 선택하고 각 key에 별도 limiter가 붙습니다.
 
