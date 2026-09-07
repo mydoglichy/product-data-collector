@@ -2,16 +2,12 @@
 
 from ownerclan_API.api.client import OwnerclanGraphQLError
 from ownerclan_API.workflows.collect_by_categories import collect_by_categories, collect_by_categories_parallel
-from ownerclan_API.workflows.collect_product_details import collect_details, fetch_items_batch
 from ownerclan_API.config import (
-    DetailsConfig,
-    DiscoveryConfig,
     IncrementalConfig,
     OutputConfig,
     OwnerclanConfig,
     RequestConfig,
 )
-from ownerclan_API.workflows.discover_products import discover
 from ownerclan_API.services.normalization import calculate_total_stock, normalize_item, normalize_options
 from ownerclan_API.persistence.storage import (
     atomic_write_json,
@@ -69,31 +65,6 @@ class FakeClient:
                 }
             }
         return {}
-
-
-def test_keyword_default_and_new_search_and_dedupes_product_keys(tmp_path):
-    config = _config(tmp_path)
-    config.discovery.keyword_file.write_text("case\ncase\n", encoding="utf-8")
-    client = FakeClient()
-    saved_targets = []
-
-    import ownerclan_API.workflows.discover_products as discover_module
-    original_save_targets = discover_module.save_discovered_product_ids_if_enabled
-    discover_module.save_discovered_product_ids_if_enabled = lambda **kwargs: saved_targets.extend(kwargs["records"]) or 2
-    try:
-        result = discover(tmp_path, config, client=client)
-    finally:
-        discover_module.save_discovered_product_ids_if_enabled = original_save_targets
-
-    assert result["discoveredCount"] == 4
-    assert result["uniqueProductCount"] == 2
-    assert result["newProductCount"] == 2
-    assert len(client.queries) == 2
-    assert "sortBy:" not in client.queries[0]
-    assert "sortBy: registerDateDesc" in client.queries[1]
-    assert {record["productId"] for record in saved_targets} == {"W1", "W2"}
-    assert {record["reason"] for record in saved_targets} == {"default", "registerDateDesc"}
-    assert not list((tmp_path / "ownerclan_API" / "data" / "processed").glob("ownerclan_*_search-ranks.json"))
 
 
 def test_category_collection_refreshes_leaf_cache_and_saves_products(tmp_path):
@@ -181,104 +152,6 @@ def test_category_collection_resumes_from_saved_cursor(tmp_path):
         second_result = collect_by_categories(tmp_path, config, client=second_client)
     finally:
         collect_module.save_products_with_raw_samples_if_enabled = original_save
-
-    assert second_result["failureCount"] == 0
-    assert len(second_client.queries) == 1
-
-
-def test_multiple_item_query_falls_back_to_items_by_keys_then_single_item():
-    class FallbackClient:
-        def __init__(self):
-            self.calls = []
-
-        def graphql(self, query):
-            self.calls.append(query)
-            if "items(" in query:
-                raise OwnerclanGraphQLError([{"message": "Cannot query field items"}])
-            if "itemsByKeys" in query:
-                raise OwnerclanGraphQLError([{"message": "Cannot query field itemsByKeys"}])
-            return {"item": _item("W1")}
-
-    client = FallbackClient()
-    items = fetch_items_batch(client, ["W1"])
-
-    assert [item["key"] for item in items] == ["W1"]
-    assert len(client.calls) == 3
-
-
-def test_collect_details_saves_products_to_postgres_without_json_outputs(tmp_path):
-    config = _config(tmp_path)
-    client = FakeClient()
-    saved = []
-
-    import ownerclan_API.workflows.collect_product_details as collect_module
-    original_save = collect_module.save_products_with_raw_samples_if_enabled
-    original_targets = collect_module.discovered_product_ids
-    collect_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: saved.append(kwargs) or {"rawSampleCount": 1, "snapshotCount": 1}
-    collect_module.discovered_product_ids = lambda **kwargs: ["W1", "W2"]
-
-    try:
-        result = collect_details(tmp_path, config, client=client)
-    finally:
-        collect_module.save_products_with_raw_samples_if_enabled = original_save
-        collect_module.discovered_product_ids = original_targets
-
-    assert result["collectedProductCount"] == 2
-    assert result["successCount"] == 2
-    assert len(saved) == 1
-    saved_products = list(saved[0]["products"])
-    assert saved_products
-    assert all("raw" in product for product in saved_products)
-    assert not (config.output.state_dir / "latest-products.json").exists()
-    data_dir = tmp_path / "ownerclan_API" / "data"
-    assert not list((data_dir / "processed").glob("ownerclan_*_product-snapshots.json"))
-    assert not list((data_dir / "raw").glob("ownerclan_*_raw.json"))
-    assert not list((data_dir / "history").glob("ownerclan_*_product-history.json"))
-
-
-def test_collect_details_resumes_from_saved_batch_index(tmp_path):
-    config = _config(tmp_path)
-
-    class FailingSecondBatchClient(FakeClient):
-        def graphql(self, query):
-            self.queries.append(query)
-            if '"W3"' in query:
-                raise RuntimeError("temporary")
-            if "items(" in query:
-                return {"items": [_item("W1"), _item("W2")]}
-            return {}
-
-    import ownerclan_API.workflows.collect_product_details as collect_module
-    original_save = collect_module.save_products_with_raw_samples_if_enabled
-    original_targets = collect_module.discovered_product_ids
-    collect_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: {"rawSampleCount": 0, "snapshotCount": 0}
-    collect_module.discovered_product_ids = lambda **kwargs: ["W1", "W2", "W3"]
-
-    try:
-        first_client = FailingSecondBatchClient()
-        first_result = collect_details(tmp_path, config, client=first_client)
-    finally:
-        collect_module.save_products_with_raw_samples_if_enabled = original_save
-        collect_module.discovered_product_ids = original_targets
-
-    assert first_result["failureCount"] == 1
-
-    class ResumingClient(FakeClient):
-        def graphql(self, query):
-            self.queries.append(query)
-            assert '"W3"' in query
-            if "items(" in query:
-                return {"items": [_item("W3")]}
-            return {}
-
-    collect_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: {"rawSampleCount": 0, "snapshotCount": 0}
-    collect_module.discovered_product_ids = lambda **kwargs: ["W1", "W2", "W3"]
-    try:
-        second_client = ResumingClient()
-        second_result = collect_details(tmp_path, config, client=second_client)
-    finally:
-        collect_module.save_products_with_raw_samples_if_enabled = original_save
-        collect_module.discovered_product_ids = original_targets
 
     assert second_result["failureCount"] == 0
     assert len(second_client.queries) == 1
@@ -383,8 +256,6 @@ def test_ownerclan_run_waits_and_restarts_after_rate_limit(tmp_path):
     config_path.write_text(
         """
 environment: production
-discovery:
-  keyword_file: ownerclan_API/config/keywords.txt
 incremental:
   page_size: 1000
 request:
@@ -464,8 +335,6 @@ def test_ownerclan_run_restarts_after_non_rate_limit_failure(tmp_path):
     config_path.write_text(
         """
 environment: production
-discovery:
-  keyword_file: ownerclan_API/config/keywords.txt
 incremental:
   page_size: 1000
 request:
@@ -686,12 +555,8 @@ def _config(tmp_path: Path):
     state_dir = data_dir / "state"
     log_dir = data_dir / "logs"
     api_dir.mkdir(exist_ok=True)
-    keyword_file = api_dir / "keywords.txt"
-    keyword_file.write_text("case\n", encoding="utf-8")
     return OwnerclanConfig(
         environment="production",
-        discovery=DiscoveryConfig(keyword_file, 2, 2),
-        details=DetailsConfig(batch_size=2),
         incremental=IncrementalConfig(page_size=2, overlap_minutes=120, include_item_histories=False),
         request=RequestConfig(interval_seconds=0, timeout_seconds=10, max_retries=0, retry_after_max_seconds=1),
         output=OutputConfig(state_dir / "categories.json", state_dir, log_dir, 3),

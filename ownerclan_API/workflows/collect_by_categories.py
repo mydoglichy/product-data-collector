@@ -15,7 +15,7 @@ from ..services.categories import load_or_refresh_leaf_categories
 from ..api.client import OwnerclanGraphQLError, OwnerclanHttpError
 from ..api.rate_limiter import RateLimiter
 from ..config import OwnerclanConfig, find_project_root, load_config
-from .discover_products import make_client
+from ..api.factory import make_client
 from ..services.logging_config import configure_logging
 from ..services.normalization import extract_connection_items, normalize_item
 from ..api.queries import all_items_query

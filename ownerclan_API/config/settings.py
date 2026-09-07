@@ -14,18 +14,6 @@ MAX_ALL_ITEMS_FIRST = 1000
 
 
 @dataclass(frozen=True)
-class DiscoveryConfig:
-    keyword_file: Path
-    top_limit_per_keyword: int
-    new_limit_per_keyword: int
-
-
-@dataclass(frozen=True)
-class DetailsConfig:
-    batch_size: int
-
-
-@dataclass(frozen=True)
 class IncrementalConfig:
     page_size: int
     overlap_minutes: int
@@ -51,8 +39,6 @@ class OutputConfig:
 @dataclass(frozen=True)
 class OwnerclanConfig:
     environment: str
-    discovery: DiscoveryConfig
-    details: DetailsConfig
     incremental: IncrementalConfig
     request: RequestConfig
     output: OutputConfig
@@ -84,22 +70,10 @@ def load_config(path: Path, project_root: Path | None = None) -> OwnerclanConfig
     if env not in VALID_ENVIRONMENTS:
         raise ValueError("environment must be sandbox or production")
 
-    discovery = _mapping(payload, "discovery")
-    details = _mapping(payload, "details")
     incremental = _mapping(payload, "incremental")
     request = _mapping(payload, "request")
     output = _mapping(payload, "output")
     timezone = str(payload.get("timezone") or "Asia/Seoul")
-
-    keyword_file = _resolve(root, discovery.get("keyword_file") or "ownerclan_API/config/keywords.txt")
-    top_limit = _positive_int(discovery.get("top_limit_per_keyword", 10), "discovery.top_limit_per_keyword")
-    new_limit = _positive_int(discovery.get("new_limit_per_keyword", 10), "discovery.new_limit_per_keyword")
-    if top_limit > MAX_ALL_ITEMS_FIRST or new_limit > MAX_ALL_ITEMS_FIRST:
-        raise ValueError("discovery limits must be 1000 or less")
-
-    batch_size = _positive_int(details.get("batch_size", 100), "details.batch_size")
-    if batch_size > 5000:
-        raise ValueError("details.batch_size must be 5000 or less")
 
     page_size = _positive_int(incremental.get("page_size", 1000), "incremental.page_size")
     if page_size > MAX_ALL_ITEMS_FIRST:
@@ -111,12 +85,6 @@ def load_config(path: Path, project_root: Path | None = None) -> OwnerclanConfig
 
     return OwnerclanConfig(
         environment=env,
-        discovery=DiscoveryConfig(
-            keyword_file=keyword_file,
-            top_limit_per_keyword=top_limit,
-            new_limit_per_keyword=new_limit,
-        ),
-        details=DetailsConfig(batch_size=batch_size),
         incremental=IncrementalConfig(
             page_size=page_size,
             overlap_minutes=max(int(incremental.get("overlap_minutes", 120)), 0),
@@ -138,22 +106,6 @@ def load_config(path: Path, project_root: Path | None = None) -> OwnerclanConfig
         ),
         timezone=timezone,
     )
-
-
-def load_keywords(path: Path) -> list[str]:
-    if not path.exists():
-        raise FileNotFoundError(f"keywords file not found: {path}")
-    seen: set[str] = set()
-    keywords: list[str] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        keyword = line.strip()
-        if not keyword or keyword.startswith("#") or keyword in seen:
-            continue
-        seen.add(keyword)
-        keywords.append(keyword)
-    if not keywords:
-        raise ValueError("keywords file must contain at least one keyword")
-    return keywords
 
 
 def load_credentials(project_root: Path) -> tuple[str, str]:

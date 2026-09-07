@@ -1,6 +1,6 @@
 # 오너클랜 수집기
 
-오너클랜 Seller GraphQL API에서 최하위 카테고리별 상품을 순회하고 증분 변경분을 PostgreSQL에 저장합니다.
+오너클랜 Seller GraphQL API에서 최하위 카테고리별 상품을 순회하고, 증분 변경분을 PostgreSQL에 저장합니다.
 
 ## 실행 흐름
 
@@ -19,9 +19,9 @@ python -m ownerclan_API --refresh-categories --limit 1 --dry-run
 python scripts\run_daily_collector.py --platform ownerclan
 ```
 
-`category_workers`가 2 이상이면 여러 카테고리를 병렬 처리합니다. 모든 worker는 하나의 공유 `RateLimiter`를 사용하므로 worker 수를 늘려도 전체 API 호출 간격은 `config/config.yaml`의 `request.interval_seconds` 기준을 공유합니다.
+`category_workers`가 2 이상이면 여러 최하위 카테고리를 병렬 처리합니다. 모든 worker는 하나의 공유 `RateLimiter`를 사용하므로 worker 수를 늘려도 전체 API 호출 간격은 `config/config.yaml`의 `request.interval_seconds` 기준으로 제한됩니다.
 
-상세한 순회 방식은 루트 운영 문서의 [COLLECTION_METHODS.md](../docs/operations/COLLECTION_METHODS.md#오너클랜)를 봅니다. 요약하면 최하위 카테고리 캐시를 만들고, 각 카테고리의 `allItems(first=500, after=cursor)` 페이지를 끝까지 순회합니다. 8개 worker는 서로 다른 카테고리를 나눠 맡지만 하나의 전역 limiter를 공유해 전체 약 150 RPM으로 제한됩니다. 병렬 진행상태는 `category-collection-progress.json`에 완료 카테고리와 카테고리별 cursor를 저장해 재시작 시 이어갑니다.
+상세한 순회 방식은 루트 운영 문서의 [COLLECTION_METHODS.md](../docs/operations/COLLECTION_METHODS.md#오너클랜)를 봅니다. 요약하면 최하위 카테고리 캐시를 만들고, 각 카테고리의 `allItems(first=500, after=cursor)` 페이지를 끝까지 순회합니다. 병렬 진행상태는 `category-collection-progress.json`에 완료 카테고리와 카테고리별 cursor를 저장해 재시작 시 이어갑니다.
 
 ## 설정과 제한
 
@@ -41,13 +41,10 @@ python scripts\run_daily_collector.py --platform ownerclan
 - `data/state/categories.json`: 최하위 카테고리 캐시
 - `data/state/category-collection-state.json`: 단일 worker 카테고리 수집 재개 위치
 - `data/state/category-collection-progress.json`: 병렬 worker 카테고리 수집 재개 위치
-- `data/state/detail-collection-state.json`: 키워드 discovery 대상 상세 수집을 직접 실행할 때의 재개 위치
-- `data/state/incremental-state.json`: 증분 수집의 마지막 완전 성공 시각
+- `data/state/incremental-state.json`: 증분 수집의 마지막 안전 성공 시각
 
-카테고리 수집이 정상 완료되면 `category-collection-state.json`과 `category-collection-progress.json`을 삭제합니다. `detail-collection-state.json`은 `python -m ownerclan_API.workflows.collect_product_details`를 직접 실행할 때만 사용합니다.
-
-`ownerclan_API.workflows.discover_products`는 키워드 기반 상품 key를 PostgreSQL `product_discovery_targets`에 저장하는 보조 workflow입니다. 기본 `python -m ownerclan_API` 경로에는 포함되지 않습니다.
+카테고리 수집이 정상 완료되면 `category-collection-state.json`과 `category-collection-progress.json`을 삭제합니다.
 
 ## 데이터 매핑
 
-플랫폼 고유 필드 매핑은 [DATA_SCHEMA.md](DATA_SCHEMA.md)를 봅니다. 공통 테이블/저장 규칙은 루트의 [DB_FIELD_SPEC.md](../docs/schema/DB_FIELD_SPEC.md)와 [DATA_STORAGE_SCHEMA.md](../docs/schema/DATA_STORAGE_SCHEMA.md)가 기준입니다.
+플랫폼 고유 필드 매핑은 [DATA_SCHEMA.md](DATA_SCHEMA.md)를 봅니다. 공통 테이블 저장 규칙은 루트의 [DB_FIELD_SPEC.md](../docs/schema/DB_FIELD_SPEC.md)와 [DATA_STORAGE_SCHEMA.md](../docs/schema/DATA_STORAGE_SCHEMA.md)가 기준입니다.
