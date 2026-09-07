@@ -98,7 +98,7 @@ def test_discover_saves_only_ranked_sorts_with_global_rank(tmp_path, monkeypatch
         discovery=DiscoveryConfig(
             markets=("dome",),
             sorts={"popular": "ha", "ranking": "rd", "recent": "da", "price_low": "aa"},
-            items_per_keyword=200,
+            list_page_size=200,
         ),
         details=DetailsConfig(batch_size=100, raw_sample_limit=20),
         request=RequestConfig(
@@ -139,7 +139,7 @@ def test_discover_uses_response_sort_for_rank_records(tmp_path, monkeypatch):
             }
 
     config = DomeggookConfig(
-        discovery=DiscoveryConfig(markets=("dome",), sorts={"popular": "ha"}, items_per_keyword=20),
+        discovery=DiscoveryConfig(markets=("dome",), sorts={"popular": "ha"}, list_page_size=20),
         details=DetailsConfig(batch_size=100, raw_sample_limit=20),
         request=RequestConfig(
             max_requests_per_minute=120,
@@ -182,7 +182,7 @@ def test_discover_walks_all_list_pages_until_short_page(tmp_path, monkeypatch):
             }
 
     config = DomeggookConfig(
-        discovery=DiscoveryConfig(markets=("dome",), sorts={"ranking": "rd"}, items_per_keyword=2),
+        discovery=DiscoveryConfig(markets=("dome",), sorts={"ranking": "rd"}, list_page_size=2),
         details=DetailsConfig(batch_size=100, raw_sample_limit=20),
         request=RequestConfig(
             max_requests_per_minute=120,
@@ -219,7 +219,7 @@ def test_discover_page_limit_saves_resume_state(tmp_path, monkeypatch):
             }
 
     config = DomeggookConfig(
-        discovery=DiscoveryConfig(markets=("dome",), sorts={"ranking": "rd"}, items_per_keyword=2),
+        discovery=DiscoveryConfig(markets=("dome",), sorts={"ranking": "rd"}, list_page_size=2),
         details=DetailsConfig(batch_size=100, raw_sample_limit=20),
         request=RequestConfig(
             max_requests_per_minute=120,
@@ -274,7 +274,7 @@ def test_da_discovery_products_remain_detail_targets(tmp_path, monkeypatch):
     api_dir.mkdir()
     client = FakeClient()
     config = DomeggookConfig(
-        discovery=DiscoveryConfig(markets=("dome",), sorts={"recent": "da"}, items_per_keyword=20),
+        discovery=DiscoveryConfig(markets=("dome",), sorts={"recent": "da"}, list_page_size=20),
         details=DetailsConfig(batch_size=100, raw_sample_limit=20),
         request=RequestConfig(
             max_requests_per_minute=120,
@@ -340,7 +340,7 @@ def test_discover_resumes_from_saved_page_after_failure(tmp_path, monkeypatch):
             }
 
     config = DomeggookConfig(
-        discovery=DiscoveryConfig(markets=("dome",), sorts={"ranking": "rd"}, items_per_keyword=2),
+        discovery=DiscoveryConfig(markets=("dome",), sorts={"ranking": "rd"}, list_page_size=2),
         details=DetailsConfig(batch_size=100, raw_sample_limit=20),
         request=RequestConfig(
             max_requests_per_minute=120,
@@ -384,7 +384,7 @@ def test_collect_details_resumes_from_saved_batch_index(tmp_path, monkeypatch):
         lambda **kwargs: ["100", "200", "300"],
     )
     config = DomeggookConfig(
-        discovery=DiscoveryConfig(markets=("dome",), sorts={"ranking": "rd"}, items_per_keyword=2),
+        discovery=DiscoveryConfig(markets=("dome",), sorts={"ranking": "rd"}, list_page_size=2),
         details=DetailsConfig(batch_size=2, raw_sample_limit=20),
         request=RequestConfig(
             max_requests_per_minute=120,
@@ -416,6 +416,40 @@ def test_collect_details_resumes_from_saved_batch_index(tmp_path, monkeypatch):
 
     assert second_result["failureCount"] == 0
     assert second_client.detail_requests == [["300"]]
+
+
+def test_collect_details_retries_invalid_json_batch_before_failing(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTGRES_ENABLED", "false")
+    api_dir = tmp_path / "domeggook_API"
+    api_dir.mkdir()
+    monkeypatch.setattr(
+        "domeggook_API.workflows.collect_product_details.discovered_product_ids",
+        lambda **kwargs: ["100", "200"],
+    )
+    sleep_delays = []
+    monkeypatch.setattr("domeggook_API.workflows.collect_product_details.time.sleep", lambda delay: sleep_delays.append(delay))
+
+    class InvalidJsonOnceClient(FakeClient):
+        def __init__(self):
+            super().__init__()
+            self.failed_once = False
+
+        def get_item_view(self, product_ids):
+            self.detail_requests.append(product_ids)
+            if not self.failed_once:
+                self.failed_once = True
+                from domeggook_API.api.client import DomeggookApiError
+
+                raise DomeggookApiError("invalid JSON response: HTTP 200")
+            return {"domeggook": {"item": [{"no": product_id, "title": f"product {product_id}"} for product_id in product_ids]}}
+
+    client = InvalidJsonOnceClient()
+    result = collect_details(tmp_path, _config(), client=client)
+
+    assert result["successCount"] == 2
+    assert result["failureCount"] == 0
+    assert client.detail_requests == [["100", "200"], ["100", "200"]]
+    assert sleep_delays == [10.0]
 
 
 def test_collect_details_runtime_limit_saves_resume_index_without_calling_api(tmp_path, monkeypatch):
@@ -456,7 +490,7 @@ def test_collect_details_daily_request_limit_saves_resume_index(tmp_path, monkey
 
 def _config():
     return DomeggookConfig(
-        discovery=DiscoveryConfig(markets=("dome", "supply"), sorts={"popular": "ha", "ranking": "rd", "recent": "da"}, items_per_keyword=20),
+        discovery=DiscoveryConfig(markets=("dome", "supply"), sorts={"popular": "ha", "ranking": "rd", "recent": "da"}, list_page_size=20),
         details=DetailsConfig(batch_size=100, raw_sample_limit=20),
         request=RequestConfig(
             max_requests_per_minute=120,

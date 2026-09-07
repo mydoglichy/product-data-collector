@@ -23,7 +23,11 @@ DOMEGGOOK_OFFICIAL_SORTS = {"se", "rd", "ha", "aa", "ad", "sd", "qa", "qd", "da"
 class DiscoveryConfig:
     markets: tuple[str, ...]
     sorts: dict[str, str]
-    items_per_keyword: int
+    list_page_size: int
+
+    @property
+    def items_per_keyword(self) -> int:
+        return self.list_page_size
 
 
 @dataclass(frozen=True)
@@ -75,9 +79,10 @@ def load_config(path: Path) -> DomeggookConfig:
     if invalid_sorts:
         raise ValueError(f"discovery.sorts contains unsupported values: {', '.join(invalid_sorts)}")
 
-    items_per_keyword = int(discovery.get("items_per_keyword", 20))
-    if not 1 <= items_per_keyword <= OFFICIAL_LIST_MAX_SIZE:
-        raise ValueError(f"discovery.items_per_keyword must be between 1 and {OFFICIAL_LIST_MAX_SIZE}")
+    raw_list_page_size = discovery.get("list_page_size", discovery.get("items_per_keyword", 20))
+    list_page_size = int(raw_list_page_size)
+    if not 1 <= list_page_size <= OFFICIAL_LIST_MAX_SIZE:
+        raise ValueError(f"discovery.list_page_size must be between 1 and {OFFICIAL_LIST_MAX_SIZE}")
 
     batch_size = int(details.get("batch_size", OFFICIAL_DETAIL_MAX_BATCH_SIZE))
     if not 1 <= batch_size <= OFFICIAL_DETAIL_MAX_BATCH_SIZE:
@@ -114,7 +119,7 @@ def load_config(path: Path) -> DomeggookConfig:
         raise ValueError("request.max_retries must be zero or greater")
 
     return DomeggookConfig(
-        discovery=DiscoveryConfig(markets=markets, sorts=sorts, items_per_keyword=items_per_keyword),
+        discovery=DiscoveryConfig(markets=markets, sorts=sorts, list_page_size=list_page_size),
         details=DetailsConfig(batch_size=batch_size, raw_sample_limit=raw_sample_limit),
         request=RequestConfig(
             max_requests_per_minute=max_requests,

@@ -14,7 +14,7 @@ def test_config_rejects_values_above_official_maxima(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text(
         "discovery:\n"
-        "  items_per_keyword: 201\n"
+        "  list_page_size: 201\n"
         "details:\n"
         "  batch_size: 100\n"
         "request:\n"
@@ -22,7 +22,7 @@ def test_config_rejects_values_above_official_maxima(tmp_path):
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="items_per_keyword"):
+    with pytest.raises(ValueError, match="list_page_size"):
         load_config(path)
 
 
@@ -30,7 +30,7 @@ def test_config_rejects_official_rate_limit_boundary(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text(
         "discovery:\n"
-        "  items_per_keyword: 20\n"
+        "  list_page_size: 20\n"
         "details:\n"
         "  batch_size: 100\n"
         "request:\n"
@@ -46,7 +46,7 @@ def test_config_rejects_daily_rate_limit_boundary(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text(
         "discovery:\n"
-        "  items_per_keyword: 20\n"
+        "  list_page_size: 20\n"
         "details:\n"
         "  batch_size: 100\n"
         "request:\n"

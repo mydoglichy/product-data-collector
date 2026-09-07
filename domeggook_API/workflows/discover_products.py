@@ -80,7 +80,7 @@ def discover(
                     ListRequest(
                         market=market,
                         sort=sort_code,
-                        size=config.discovery.items_per_keyword,
+                        size=config.discovery.list_page_size,
                         page=page,
                         category_code=category.code,
                     )
@@ -112,7 +112,7 @@ def discover(
 
             effective_sort = _text_or_none(header.get("sort")) or sort_code
             current_page = _positive_int(header.get("currentPage")) or page
-            items_per_page = _positive_int(header.get("itemsPerPage")) or config.discovery.items_per_keyword
+            items_per_page = _positive_int(header.get("itemsPerPage")) or config.discovery.list_page_size
             should_save_rank = effective_sort in RANKED_SORTS
             search_rank_records: list[dict[str, object]] = []
             discovery_target_records: list[dict[str, object]] = []

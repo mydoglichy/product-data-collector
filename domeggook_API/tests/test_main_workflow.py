@@ -1,4 +1,4 @@
-import json
+﻿import json
 
 from domeggook_API.workflows.main import run
 
@@ -106,7 +106,7 @@ def _write_config(tmp_path):
     config_path.write_text(
         """
 discovery:
-  items_per_keyword: 20
+  list_page_size: 20
 details:
   batch_size: 100
 request:

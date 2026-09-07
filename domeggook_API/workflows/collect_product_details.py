@@ -23,6 +23,7 @@ from ..services.time_utils import now_iso
 
 
 LOGGER = logging.getLogger("domeggook_API.collect_product_details")
+INVALID_JSON_RETRY_DELAYS_SECONDS = (10.0, 20.0, 30.0)
 
 
 def collect_details(
@@ -30,19 +31,24 @@ def collect_details(
     config: DomeggookConfig,
     *,
     product_limit: int | None = None,
+    product_ids: list[str] | None = None,
+    state_filename: str = "detail-collection-state.json",
     deadline_monotonic: float | None = None,
     run_budget: RunBudget | None = None,
     dry_run: bool = False,
     client: DomeggookClient | None = None,
 ) -> dict[str, int]:
     data_dir = project_root / "domeggook_API" / "data"
-    product_ids = discovered_product_ids(project_root=project_root, platform="domeggook", limit=product_limit)
+    if product_ids is None:
+        product_ids = discovered_product_ids(project_root=project_root, platform="domeggook", limit=product_limit)
+    elif product_limit is not None:
+        product_ids = product_ids[:product_limit]
 
     if client is None:
         api_keys = load_api_keys(project_root)
         client = create_domeggook_client(api_keys, config)
 
-    state_path = data_dir / "state" / "detail-collection-state.json"
+    state_path = data_dir / "state" / state_filename
     state = load_state(state_path)
     collected_at = str(state.get("runCollectedAt") or now_iso(config.timezone))
     list_hash = item_list_hash(product_ids)
@@ -84,9 +90,12 @@ def collect_details(
             break
         batch = product_ids[index : index + config.details.batch_size]
         try:
-            payload = client.get_item_view(batch)
-            if run_budget is not None:
-                run_budget.record_call()
+            payload = _get_item_view_with_invalid_json_retries(
+                client,
+                batch,
+                run_budget=run_budget,
+                deadline_monotonic=deadline_monotonic,
+            )
             parsed_products, parsed_failures = parse_detail_products(payload, collected_at, raw_limit=raw_remaining)
             failures.extend(parsed_failures)
         except DomeggookApiError as exc:
@@ -141,6 +150,38 @@ def collect_details(
     }
 
 
+def _get_item_view_with_invalid_json_retries(
+    client: DomeggookClient,
+    batch: list[str],
+    *,
+    run_budget: RunBudget | None,
+    deadline_monotonic: float | None,
+) -> dict[str, object]:
+    for attempt in range(1, len(INVALID_JSON_RETRY_DELAYS_SECONDS) + 2):
+        try:
+            payload = client.get_item_view(batch)
+            if run_budget is not None:
+                run_budget.record_call()
+            return payload
+        except DomeggookApiError as exc:
+            if run_budget is not None:
+                run_budget.record_call()
+            if not _is_invalid_json_error(exc) or attempt > len(INVALID_JSON_RETRY_DELAYS_SECONDS):
+                raise
+            if _deadline_reached(deadline_monotonic) or (run_budget is not None and not run_budget.can_call()):
+                raise
+            delay = INVALID_JSON_RETRY_DELAYS_SECONDS[attempt - 1]
+            LOGGER.warning(
+                "retrying detail batch after invalid_json product_ids=%s attempt=%d delaySeconds=%.1f error=%s",
+                ",".join(batch),
+                attempt,
+                delay,
+                exc,
+            )
+            time.sleep(delay)
+    raise DomeggookApiError("request failed after invalid_json retries")
+
+
 def _save_domeggook_detail_batch(
     *,
     project_root: Path,
@@ -168,6 +209,10 @@ def _raw_remaining(state: dict[str, object], default: int) -> int:
 
 def _deadline_reached(deadline_monotonic: float | None) -> bool:
     return deadline_monotonic is not None and time.monotonic() >= deadline_monotonic
+
+
+def _is_invalid_json_error(exc: DomeggookApiError) -> bool:
+    return "invalid JSON response" in str(exc)
 
 
 def main(argv: list[str] | None = None) -> int:
