@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from ..config import find_project_root, load_config
-from .discover_products import make_client
+from ..api.factory import make_client
 from ..services.logging_config import configure_logging
 from ..api.queries import all_items_query
 

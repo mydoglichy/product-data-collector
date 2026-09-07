@@ -78,15 +78,6 @@ openmarketSellable
 """
 
 
-def item_query(key: str, *, minimal: bool = False) -> str:
-    return f"query {{ item(key: {json.dumps(key, ensure_ascii=False)}) {{ {_fields(minimal)} }} }}"
-
-
-def items_query(keys: list[str], field_name: str = "items", *, minimal: bool = False) -> str:
-    keys_json = json.dumps(keys, ensure_ascii=False)
-    return f"query {{ {field_name}(keys: {keys_json}) {{ {_fields(minimal)} }} }}"
-
-
 def category_descendants_query(*, first: int, after: str | None = None) -> str:
     args: dict[str, Any] = {"first": first}
     if after:

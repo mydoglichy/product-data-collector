@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import OwnerclanConfig
-from ..workflows.discover_products import make_client
+from ..api.factory import make_client
 from .normalization import extract_connection_items
 from ..api.queries import category_descendants_query
 from ..persistence.storage import atomic_write_json, load_json_object

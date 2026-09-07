@@ -1,13 +1,5 @@
 environment: production
 
-discovery:
-  keyword_file: ownerclan_API/config/keywords.txt
-  top_limit_per_keyword: 10
-  new_limit_per_keyword: 10
-
-details:
-  batch_size: 100
-
 incremental:
   page_size: 500
   overlap_minutes: 120

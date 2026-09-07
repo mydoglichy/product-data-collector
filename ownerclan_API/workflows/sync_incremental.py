@@ -12,7 +12,7 @@ from postgres_storage import save_products_with_raw_samples_if_enabled
 
 from ..api.client import OwnerclanGraphQLError, OwnerclanHttpError
 from ..config import OwnerclanConfig, find_project_root, load_config
-from .discover_products import make_client
+from ..api.factory import make_client
 from ..services.logging_config import configure_logging
 from ..services.normalization import extract_connection_items, normalize_item
 from ..api.queries import all_items_query, item_histories_query
