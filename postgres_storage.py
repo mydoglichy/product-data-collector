@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from threading import Lock
 from collections.abc import Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -33,6 +34,8 @@ DOMEGGOOK_RANKED_SORTS = {"ha", "rd"}
 DEFAULT_PRODUCT_BATCH_SIZE = 1000
 PRODUCT_BATCH_SIZE_ENV = "POSTGRES_PRODUCT_BATCH_SIZE"
 LOGGER = logging.getLogger(__name__)
+_SCHEMA_INIT_LOCK = Lock()
+_SCHEMA_INIT_KEYS: set[tuple[str, int, str, str]] = set()
 
 @dataclass(frozen=True)
 class PostgresConfig:
@@ -106,7 +109,7 @@ def test_connection(project_root: Path | None = None) -> dict[str, str]:
 def product_counts(project_root: Path | None = None) -> dict[str, int]:
     config = load_postgres_config(project_root)
     with connect(config) as connection:
-        init_schema(connection)
+        ensure_schema_initialized(config, connection)
         rows = connection.execute(
             """
             SELECT platform, count(*) AS count
@@ -128,7 +131,7 @@ def discovered_product_ids(
         return []
     config = load_postgres_config(project_root)
     with connect(config) as connection:
-        init_schema(connection)
+        ensure_schema_initialized(config, connection)
         query = """
             SELECT external_product_id
             FROM product_discovery_targets
@@ -160,7 +163,7 @@ def save_discovered_product_ids_if_enabled(
     inserted_count = 0
     config = load_postgres_config(project_root)
     with connect(config) as connection:
-        init_schema(connection)
+        ensure_schema_initialized(config, connection)
         inserted_count = _count_new_discovery_targets(connection, platform, rows)
         _bulk_upsert_discovery_targets(connection, rows)
         connection.commit()
@@ -329,6 +332,17 @@ def init_schema(connection: Connection[Any]) -> None:
     connection.commit()
 
 
+def ensure_schema_initialized(config: PostgresConfig, connection: Connection[Any]) -> None:
+    key = (config.host, config.port, config.database, config.user)
+    if key in _SCHEMA_INIT_KEYS:
+        return
+    with _SCHEMA_INIT_LOCK:
+        if key in _SCHEMA_INIT_KEYS:
+            return
+        init_schema(connection)
+        _SCHEMA_INIT_KEYS.add(key)
+
+
 def _apply_one_time_migrations(connection: Connection[Any]) -> None:
     migration_name = "drop_payload_based_change_history_20260904"
     applied = connection.execute(
@@ -360,7 +374,7 @@ def save_product_snapshots(
     batch_size = _product_batch_size(project_root)
     saved_count = 0
     with connect(config) as connection:
-        init_schema(connection)
+        ensure_schema_initialized(config, connection)
         for batch in _chunks(rows, batch_size):
             try:
                 saved_count += _save_product_batch_with_retry(connection, batch)
@@ -384,11 +398,110 @@ def save_products_with_raw_samples_if_enabled(
     raw_sample_limit: int,
     logger: logging.Logger | None = None,
 ) -> dict[str, int]:
-    if not postgres_enabled(project_root):
-        return {"rawSampleCount": 0, "snapshotCount": 0}
     if raw_sample_limit < 0:
         raise ValueError("raw_sample_limit must be zero or greater")
+    product_list = list(products)
+    if not product_list:
+        return {"rawSampleCount": 0, "snapshotCount": 0}
+    if not postgres_enabled(project_root):
+        return {"rawSampleCount": 0, "snapshotCount": 0}
 
+    config = load_postgres_config(project_root)
+    batch_size = _product_batch_size(project_root)
+    with connect(config) as connection:
+        ensure_schema_initialized(config, connection)
+        result = _save_products_with_raw_samples(
+            connection=connection,
+            batch_size=batch_size,
+            platform=platform,
+            collected_at=collected_at,
+            products=product_list,
+            raw_sample_limit=raw_sample_limit,
+        )
+    if logger is not None:
+        logger.info(
+            "saved PostgreSQL products rawSampleCount=%d snapshotCount=%d",
+            result["rawSampleCount"],
+            result["snapshotCount"],
+        )
+    return result
+
+
+class ProductSnapshotSaver:
+    def __init__(
+        self,
+        *,
+        project_root: Path,
+        platform: str,
+        raw_sample_limit: int,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        if raw_sample_limit < 0:
+            raise ValueError("raw_sample_limit must be zero or greater")
+        self.project_root = project_root
+        self.platform = platform
+        self.raw_sample_limit = raw_sample_limit
+        self.logger = logger
+        self._enabled = postgres_enabled(project_root)
+        self._config: PostgresConfig | None = None
+        self._connection: Connection[Any] | None = None
+        self._batch_size = DEFAULT_PRODUCT_BATCH_SIZE
+
+    def save(self, *, collected_at: str, products: Iterable[dict[str, Any]]) -> dict[str, int]:
+        product_list = list(products)
+        if not product_list:
+            return {"rawSampleCount": 0, "snapshotCount": 0}
+        if not self._enabled:
+            return {"rawSampleCount": 0, "snapshotCount": 0}
+        connection = self._get_connection()
+        result = _save_products_with_raw_samples(
+            connection=connection,
+            batch_size=self._batch_size,
+            platform=self.platform,
+            collected_at=collected_at,
+            products=product_list,
+            raw_sample_limit=self.raw_sample_limit,
+        )
+        if self.logger is not None:
+            self.logger.info(
+                "saved PostgreSQL products rawSampleCount=%d snapshotCount=%d",
+                result["rawSampleCount"],
+                result["snapshotCount"],
+            )
+        return result
+
+    def close(self) -> None:
+        if self._connection is not None:
+            self._connection.close()
+            self._connection = None
+
+    def _get_connection(self) -> Connection[Any]:
+        if self._connection is not None:
+            return self._connection
+        self._config = load_postgres_config(self.project_root)
+        self._batch_size = _product_batch_size(self.project_root)
+        self._connection = psycopg.connect(
+            host=self._config.host,
+            port=self._config.port,
+            dbname=self._config.database,
+            user=self._config.user,
+            password=self._config.password,
+            connect_timeout=10,
+            row_factory=dict_row,
+        )
+        ensure_schema_initialized(self._config, self._connection)
+        return self._connection
+
+
+def _save_products_with_raw_samples(
+    *,
+    connection: Connection[Any],
+    batch_size: int,
+    platform: str,
+    collected_at: str,
+    products: Iterable[dict[str, Any]],
+    raw_sample_limit: int,
+) -> dict[str, int]:
     product_list = list(products)
     raw_rows = _raw_sample_rows(platform, collected_at, product_list, raw_sample_limit)
     snapshot_rows = [_snapshot_row(platform, collected_at, product) for product in _products_without_raw(product_list)]
@@ -396,31 +509,21 @@ def save_products_with_raw_samples_if_enabled(
     if not raw_rows and not snapshot_rows:
         return {"rawSampleCount": 0, "snapshotCount": 0}
 
-    config = load_postgres_config(project_root)
-    batch_size = _product_batch_size(project_root)
     snapshot_count = 0
-    with connect(config) as connection:
-        init_schema(connection)
-        if raw_rows:
-            _insert_raw_sample_rows(connection, raw_rows)
-            connection.commit()
-        for batch in _chunks(snapshot_rows, batch_size):
-            try:
-                snapshot_count += _save_product_batch_with_retry(connection, batch)
-            except Exception:
-                LOGGER.exception(
-                    "failed PostgreSQL product batch platform=%s count=%d firstExternalProductId=%s",
-                    platform,
-                    len(batch),
-                    batch[0]["external_product_id"] if batch else "",
-                )
-                connection.rollback()
-    if logger is not None:
-        logger.info(
-            "saved PostgreSQL products rawSampleCount=%d snapshotCount=%d",
-            len(raw_rows),
-            snapshot_count,
-        )
+    if raw_rows:
+        _insert_raw_sample_rows(connection, raw_rows)
+        connection.commit()
+    for batch in _chunks(snapshot_rows, batch_size):
+        try:
+            snapshot_count += _save_product_batch_with_retry(connection, batch)
+        except Exception:
+            LOGGER.exception(
+                "failed PostgreSQL product batch platform=%s count=%d firstExternalProductId=%s",
+                platform,
+                len(batch),
+                batch[0]["external_product_id"] if batch else "",
+            )
+            connection.rollback()
     return {"rawSampleCount": len(raw_rows), "snapshotCount": snapshot_count}
 
 
@@ -466,7 +569,7 @@ def save_product_raw_samples_if_enabled(
 
     config = load_postgres_config(project_root)
     with connect(config) as connection:
-        init_schema(connection)
+        ensure_schema_initialized(config, connection)
         _insert_raw_sample_rows(connection, rows)
         connection.commit()
     if logger is not None:
@@ -490,12 +593,52 @@ def save_search_ranks_if_enabled(
 
     config = load_postgres_config(project_root)
     with connect(config) as connection:
-        init_schema(connection)
+        ensure_schema_initialized(config, connection)
         _bulk_upsert_search_ranks(connection, rows)
         connection.commit()
     if logger is not None:
         logger.info("saved PostgreSQL search ranks count=%d", len(rows))
     return len(rows)
+
+
+def save_discovery_targets_and_search_ranks_if_enabled(
+    *,
+    project_root: Path,
+    platform: str,
+    discovery_records: Iterable[dict[str, Any]],
+    search_rank_records: Iterable[dict[str, Any]],
+    logger: logging.Logger | None = None,
+) -> dict[str, int]:
+    if not postgres_enabled(project_root):
+        return {"insertedTargetCount": 0, "discoveryTargetCount": 0, "searchRankCount": 0}
+
+    discovery_rows = _discovery_target_rows(platform, discovery_records)
+    rank_rows = _search_rank_rows(platform, search_rank_records)
+    if not discovery_rows and not rank_rows:
+        return {"insertedTargetCount": 0, "discoveryTargetCount": 0, "searchRankCount": 0}
+
+    inserted_count = 0
+    config = load_postgres_config(project_root)
+    with connect(config) as connection:
+        ensure_schema_initialized(config, connection)
+        if discovery_rows:
+            inserted_count = _count_new_discovery_targets(connection, platform, discovery_rows)
+            _bulk_upsert_discovery_targets(connection, discovery_rows)
+        if rank_rows:
+            _bulk_upsert_search_ranks(connection, rank_rows)
+        connection.commit()
+    if logger is not None:
+        logger.info(
+            "saved PostgreSQL discovery rows discoveryTargetCount=%d newCount=%d searchRankCount=%d",
+            len(discovery_rows),
+            inserted_count,
+            len(rank_rows),
+        )
+    return {
+        "insertedTargetCount": inserted_count,
+        "discoveryTargetCount": len(discovery_rows),
+        "searchRankCount": len(rank_rows),
+    }
 
 
 def _search_rank_rows(platform: str, records: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -777,7 +920,14 @@ def _save_product_batch(connection: Connection[Any], rows: list[dict[str, Any]])
     existing_states = _existing_product_states(connection, unique_rows[0]["platform"], external_ids)
     history_plans = _history_insert_plans(unique_rows, existing_states)
     _bulk_upsert_products(connection, unique_rows, existing_states)
-    product_ids = _product_ids(connection, unique_rows[0]["platform"], external_ids)
+    product_ids = {
+        external_id: int(state["id"])
+        for external_id, state in existing_states.items()
+        if state.get("id") is not None
+    }
+    missing_external_ids = [external_id for external_id in external_ids if external_id not in product_ids]
+    if missing_external_ids:
+        product_ids.update(_product_ids(connection, unique_rows[0]["platform"], missing_external_ids))
     _bulk_insert_history(connection, history_plans, product_ids)
     return len(unique_rows)
 

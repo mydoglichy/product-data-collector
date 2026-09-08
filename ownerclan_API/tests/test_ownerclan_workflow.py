@@ -73,13 +73,13 @@ def test_category_collection_refreshes_leaf_cache_and_saves_products(tmp_path):
     saved = []
 
     import ownerclan_API.workflows.collect_by_categories as collect_module
-    original_save = collect_module.save_products_with_raw_samples_if_enabled
-    collect_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: saved.append(kwargs) or {"rawSampleCount": 1, "snapshotCount": 1}
+    original_saver = collect_module.ProductSnapshotSaver
+    collect_module.ProductSnapshotSaver = lambda **kwargs: _FakeProductSnapshotSaver(saved)
 
     try:
         result = collect_by_categories(tmp_path, config, refresh_categories=True, client=client)
     finally:
-        collect_module.save_products_with_raw_samples_if_enabled = original_save
+        collect_module.ProductSnapshotSaver = original_saver
 
     assert result["categoryCount"] == 1
     assert result["pageCount"] == 1
@@ -118,14 +118,15 @@ def test_category_collection_resumes_from_saved_cursor(tmp_path):
             }
 
     import ownerclan_API.workflows.collect_by_categories as collect_module
-    original_save = collect_module.save_products_with_raw_samples_if_enabled
-    collect_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: {"rawSampleCount": 0, "snapshotCount": 0}
+    saved = []
+    original_saver = collect_module.ProductSnapshotSaver
+    collect_module.ProductSnapshotSaver = lambda **kwargs: _FakeProductSnapshotSaver(saved)
 
     try:
         first_client = FailingSecondPageClient()
         first_result = collect_by_categories(tmp_path, config, client=first_client)
     finally:
-        collect_module.save_products_with_raw_samples_if_enabled = original_save
+        collect_module.ProductSnapshotSaver = original_saver
 
     assert first_result["failureCount"] == 1
     state = load_json_object(config.output.state_dir / "category-collection-state.json")
@@ -146,12 +147,12 @@ def test_category_collection_resumes_from_saved_cursor(tmp_path):
                 }
             }
 
-    collect_module.save_products_with_raw_samples_if_enabled = lambda **kwargs: {"rawSampleCount": 0, "snapshotCount": 0}
+    collect_module.ProductSnapshotSaver = lambda **kwargs: _FakeProductSnapshotSaver(saved)
     try:
         second_client = ResumingClient()
         second_result = collect_by_categories(tmp_path, config, client=second_client)
     finally:
-        collect_module.save_products_with_raw_samples_if_enabled = original_save
+        collect_module.ProductSnapshotSaver = original_saver
 
     assert second_result["failureCount"] == 0
     assert len(second_client.queries) == 1
@@ -224,7 +225,8 @@ def test_parallel_category_collection_uses_one_shared_rate_limiter(tmp_path, mon
         lambda *args, **kwargs: [{"key": "C1"}, {"key": "C2"}],
     )
     monkeypatch.setattr(category_module, "make_client", fake_make_client)
-    monkeypatch.setattr(category_module, "save_products_with_raw_samples_if_enabled", lambda **kwargs: {"rawSampleCount": 0, "snapshotCount": 0})
+    saved = []
+    monkeypatch.setattr(category_module, "ProductSnapshotSaver", lambda **kwargs: _FakeProductSnapshotSaver(saved))
 
     result = collect_by_categories_parallel(tmp_path, _config(tmp_path), category_workers=2)
 
@@ -562,6 +564,19 @@ def _config(tmp_path: Path):
         output=OutputConfig(state_dir / "categories.json", state_dir, log_dir, 3),
         timezone="Asia/Seoul",
     )
+
+
+class _FakeProductSnapshotSaver:
+    def __init__(self, saved):
+        self.saved = saved
+        self.closed = False
+
+    def save(self, **kwargs):
+        self.saved.append(kwargs)
+        return {"rawSampleCount": 0, "snapshotCount": len(list(kwargs["products"]))}
+
+    def close(self):
+        self.closed = True
 
 
 def _item(key, *, name=None, updated_at="2026-08-24T00:00:00+09:00", options=None):
