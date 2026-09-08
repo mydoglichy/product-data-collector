@@ -1,6 +1,6 @@
 # 데이터 저장 흐름
 
-현재 운영 저장소는 PostgreSQL입니다. 스키마 생성과 기존 DB 보강은 [postgres_storage.py](../../postgres_storage.py)의 `init_schema()`에서 수행합니다.
+현재 운영 저장소는 PostgreSQL입니다. 스키마 생성과 기존 DB 보강은 [postgres_storage.py](../../postgres_storage.py)의 `init_schema()`에서 수행합니다. 수집 실행 중에는 같은 DB에 대해 `init_schema()`를 한 번만 확인하고, 이후 저장 호출은 반복 스키마 확인 없이 진행합니다.
 
 ## 공통 흐름
 
@@ -34,5 +34,7 @@
 ## Batch 처리
 
 기본 상품 저장 batch size는 `1000`입니다. `.env`의 `POSTGRES_PRODUCT_BATCH_SIZE`로 조정할 수 있습니다. 각 batch는 별도 트랜잭션으로 처리하고, 실패 시 해당 batch를 한 번 재시도합니다. 재시도 후에도 실패하면 해당 batch만 rollback하고 다음 batch 처리를 계속합니다.
+
+오너클랜 카테고리 수집처럼 페이지 단위로 자주 저장하는 workflow는 실행 중 PostgreSQL 연결을 재사용합니다. 저장할 상품이 없는 페이지는 DB 연결을 열지 않습니다.
 
 현재는 staging 테이블을 적용하지 않습니다. API 수집 결과를 메모리 batch로 처리해도 DB 왕복과 transaction 크기를 제한할 수 있기 때문입니다. batch 크기로도 메모리 압박, 네트워크 재시도 비용, 동일 상품 중복 유입, 수집 중단 후 재개 비용이 커지면 임시 staging 테이블 또는 임시 파일 기반 적재를 추가합니다.
