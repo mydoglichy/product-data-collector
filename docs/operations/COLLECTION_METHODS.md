@@ -53,7 +53,7 @@ worker는 서로 다른 카테고리를 동시에 맡습니다. 같은 카테고
 - `completedCategoryKeys`: 완료된 최하위 카테고리 key 목록
 - `inProgress`: 카테고리별 다음 cursor(`after`)
 
-각 페이지는 PostgreSQL 저장과 progress 저장을 한 묶음으로 백그라운드 저장 worker에 넘깁니다. API worker는 이전 저장 작업이 끝났는지 확인한 뒤 다음 페이지 저장을 예약하므로, 저장 완료 전 cursor만 앞서 나가서 유실되는 상황을 피합니다.
+각 페이지는 PostgreSQL 저장과 progress 저장을 한 묶음으로 백그라운드 저장 worker에 넘깁니다. 저장 worker는 실행 중 PostgreSQL 연결을 재사용합니다. API worker는 이전 저장 작업이 끝났는지 확인한 뒤 다음 페이지 저장을 예약하므로, 저장 완료 전 cursor만 앞서 나가서 유실되는 상황을 피합니다.
 
 재시작 시에는 완료된 카테고리를 건너뛰고, 진행 중이던 카테고리는 저장된 `after` cursor부터 이어갑니다. rate limit 계열 오류는 `rateLimitFailureCount`를 올리고 전체 worker 소비를 멈춥니다. 상위 `ownerclan_API.workflows.main.run()`은 기본 90초 대기 후 같은 progress 파일 기준으로 재시작합니다.
 
@@ -141,7 +141,7 @@ discovery 상태는 `discovery-state.json` 또는 daily 최근 보강용 `recent
 - `sort`
 - `nextPage`
 
-각 list page 저장 후 다음 page 또는 다음 position을 기록합니다. runtime cap이나 API 예산에 걸리면 마지막으로 처리하려던 position/page를 저장하고 다음 실행에서 이어갑니다.
+discovery는 발견 상품과 순위 기록을 최대 5개 list page까지 모아 한 번에 저장합니다. 재개 상태는 DB 저장이 끝난 뒤 다음 page 또는 다음 position으로 이동합니다. runtime cap이나 API 예산에 걸리면 저장 대기 중인 page를 먼저 DB에 반영한 뒤 마지막으로 처리하려던 position/page를 저장하고 다음 실행에서 이어갑니다.
 
 상세 수집 상태는 `detail-collection-state.json`에 저장합니다.
 
