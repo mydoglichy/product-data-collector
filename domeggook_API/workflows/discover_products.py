@@ -13,12 +13,18 @@ from ..services.logging_config import configure_logging
 from ..services.parsing import parse_list_header, parse_list_items, parse_product_id
 from ..persistence.storage import clear_state, load_state, save_state
 from ..services.time_utils import now_iso
-from postgres_storage import save_discovered_product_ids_if_enabled, save_search_ranks_if_enabled
+from postgres_storage import (
+    postgres_enabled,
+    save_discovered_product_ids_if_enabled,
+    save_discovery_targets_and_search_ranks_if_enabled,
+    save_search_ranks_if_enabled,
+)
 from .run_budget import RunBudget
 
 
 LOGGER = logging.getLogger("domeggook_API.workflows.discover_products")
 RANKED_SORTS = {"ha", "rd"}
+DISCOVERY_SAVE_FLUSH_PAGES = 5
 
 
 def discover(
@@ -60,6 +66,7 @@ def discover(
 
     positions = _discovery_positions(categories, config, allowed_reasons=allowed_reasons)
     start_index = _discovery_start_index(positions, state)
+    save_buffer = _DiscoverySaveBuffer()
     for position_index, (category, market, reason, sort_code) in enumerate(positions[start_index:], start=start_index):
         page = _state_page(state) if position_index == start_index else 1
         pages_for_position = 0
@@ -67,11 +74,13 @@ def discover(
             if _deadline_reached(deadline_monotonic):
                 stopped_on_runtime_limit = True
                 if not dry_run:
+                    inserted_target_count += save_buffer.flush(project_root=project_root, logger=LOGGER)
                     _save_next_discovery_state(state_path, run_collected_at, positions, position_index, page)
                 break
             if run_budget is not None and not run_budget.can_call():
                 stopped_on_daily_request_limit = True
                 if not dry_run:
+                    inserted_target_count += save_buffer.flush(project_root=project_root, logger=LOGGER)
                     _save_next_discovery_state(state_path, run_collected_at, positions, position_index, page)
                 break
             collected_at = run_collected_at
@@ -94,6 +103,9 @@ def discover(
             except DomeggookApiError as exc:
                 failures += 1
                 stopped_on_failure = True
+                if not dry_run:
+                    inserted_target_count += save_buffer.flush(project_root=project_root, logger=LOGGER)
+                    _save_next_discovery_state(state_path, run_collected_at, positions, position_index, page)
                 LOGGER.error(
                     "failed list category=%s category_name=%r market=%s sort=%s page=%d error=%s",
                     category.code,
@@ -166,35 +178,27 @@ def discover(
                         }
                     )
 
-            if not dry_run:
-                inserted_target_count += save_discovered_product_ids_if_enabled(
-                    project_root=project_root,
-                    platform="domeggook",
-                    records=discovery_target_records,
-                    logger=LOGGER,
-                )
-                save_search_ranks_if_enabled(
-                    project_root=project_root,
-                    platform="domeggook",
-                    records=search_rank_records,
-                    logger=LOGGER,
-                )
+            save_buffer.add(discovery_target_records, search_rank_records)
 
             if len(items) < items_per_page:
                 if not dry_run:
+                    inserted_target_count += save_buffer.flush(project_root=project_root, logger=LOGGER)
                     _save_next_discovery_state(state_path, collected_at, positions, position_index, None)
                 break
             if max_pages_per_position is not None and pages_for_position >= max_pages_per_position:
                 if not dry_run:
+                    inserted_target_count += save_buffer.flush(project_root=project_root, logger=LOGGER)
                     _save_next_discovery_state(state_path, collected_at, positions, position_index, None)
                 break
             if page_limit is not None and page_count >= page_limit:
                 stopped_on_limit = True
                 if not dry_run:
+                    inserted_target_count += save_buffer.flush(project_root=project_root, logger=LOGGER)
                     _save_next_discovery_state(state_path, collected_at, positions, position_index, page + 1)
                 break
             page += 1
-            if not dry_run:
+            if not dry_run and save_buffer.ready_to_flush:
+                inserted_target_count += save_buffer.flush(project_root=project_root, logger=LOGGER)
                 _save_next_discovery_state(state_path, collected_at, positions, position_index, page)
         if stopped_on_failure or stopped_on_limit or stopped_on_runtime_limit or stopped_on_daily_request_limit:
             break
@@ -205,6 +209,7 @@ def discover(
         and not stopped_on_runtime_limit
         and not stopped_on_daily_request_limit
     ):
+        inserted_target_count += save_buffer.flush(project_root=project_root, logger=LOGGER)
         clear_state(state_path)
 
     return {
@@ -219,6 +224,56 @@ def discover(
         "runtimeLimitReached": int(stopped_on_runtime_limit),
         "dailyRequestLimitReached": int(stopped_on_daily_request_limit),
     }
+
+
+class _DiscoverySaveBuffer:
+    def __init__(self) -> None:
+        self.discovery_records: list[dict[str, object]] = []
+        self.search_rank_records: list[dict[str, object]] = []
+        self.page_count = 0
+
+    @property
+    def ready_to_flush(self) -> bool:
+        return self.page_count >= DISCOVERY_SAVE_FLUSH_PAGES
+
+    def add(
+        self,
+        discovery_records: list[dict[str, object]],
+        search_rank_records: list[dict[str, object]],
+    ) -> None:
+        self.discovery_records.extend(discovery_records)
+        self.search_rank_records.extend(search_rank_records)
+        self.page_count += 1
+
+    def flush(self, *, project_root: Path, logger: logging.Logger) -> int:
+        if not self.discovery_records and not self.search_rank_records:
+            return 0
+        if postgres_enabled(project_root):
+            result = save_discovery_targets_and_search_ranks_if_enabled(
+                project_root=project_root,
+                platform="domeggook",
+                discovery_records=self.discovery_records,
+                search_rank_records=self.search_rank_records,
+                logger=logger,
+            )
+            inserted_count = result["insertedTargetCount"]
+        else:
+            inserted_count = save_discovered_product_ids_if_enabled(
+                project_root=project_root,
+                platform="domeggook",
+                records=self.discovery_records,
+                logger=logger,
+            )
+            save_search_ranks_if_enabled(
+                project_root=project_root,
+                platform="domeggook",
+                records=self.search_rank_records,
+                logger=logger,
+            )
+        self.discovery_records = []
+        self.search_rank_records = []
+        self.page_count = 0
+        return inserted_count
 
 
 def _global_rank(current_page: int, items_per_page: int, index: int) -> int:
