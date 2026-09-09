@@ -88,6 +88,7 @@ def test_snapshot_row_normalizes_product_for_postgres() -> None:
             "imageUrl": "https://img.example/a.jpg?size=100",
             "backupImageUrl": "https://img.example/b.jpg?size=100",
             "productPrice": 12000,
+            "sourceSpecific": {"openmarketSellable": True},
             "raw": {"ignored": True},
         },
     )
@@ -101,6 +102,7 @@ def test_snapshot_row_normalizes_product_for_postgres() -> None:
     assert "comparable_payload" not in row
     assert "comparable_fingerprint" not in row
     assert row["primary_price"] == 12000
+    assert row["source_specific"] == {"openmarketSellable": True}
 
 
 def test_snapshot_row_preserves_falsy_inventory_and_shipping_values() -> None:

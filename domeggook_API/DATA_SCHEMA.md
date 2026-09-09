@@ -12,6 +12,7 @@
 | `products.status` | `basis.status` |
 | `products.image_url` | `thumb.original` 또는 첫 번째 이미지 URL |
 | `products.backup_image_url` | 두 번째 이미지 URL |
+| `products.source_specific` | `basis.section`, `basis.tax`, `seller.vacation`, `detail.safetyCert`, `detail.infoDuty`, `category.parents/current`, `popular`, `priceCompare`, `return.deliAmt`, `return.deliAmtDouble` 등 플랫폼 전용 보조 정보 |
 
 ## 판매자
 

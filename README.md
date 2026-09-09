@@ -72,6 +72,7 @@ python -m coupang_API --dry-run
 - `product_url`
 - `image_url`
 - `backup_image_url`
+- `source_specific JSONB`
 - `status`
 - `seller_external_id`
 - `seller_nickname`
@@ -82,6 +83,8 @@ python -m coupang_API --dry-run
 - `seller_review_count`
 - `first_seen_at`
 - `last_collected_at`
+
+`source_specific`에는 플랫폼별 보조/리스크 정보를 최신값으로 저장합니다. 예를 들어 도매꾹/도매매의 인증정보, 상품정보고시, 반품정책, 인기/최저가 비교와 오너클랜의 인증정보, 상품정보고시, 반품정책, 오픈마켓 판매가능 여부, 유통금지 속성이 들어갑니다.
 
 `product_history`에는 가격, 재고, 배송, 상태, MOQ/옵션 등 추세 분석 대상 값이 최초 수집되었거나 실제 변경된 경우에만 row를 저장합니다.
 
@@ -95,7 +98,7 @@ python -m coupang_API --dry-run
 - `shipping JSONB`
 - `status`
 
-가격만 바뀌어도 해당 시점의 가격, 재고, 배송 전체 핵심 상태를 함께 저장합니다. 상품명, URL, 이미지, 판매자 닉네임, 판매자 등급, 리뷰 수 같은 master/부가 정보만 바뀐 경우에는 history를 만들지 않습니다.
+가격만 바뀌어도 해당 시점의 가격, 재고, 배송 전체 핵심 상태를 함께 저장합니다. 상품명, URL, 이미지, `source_specific`, 판매자 닉네임, 판매자 등급, 리뷰 수 같은 master/부가 정보만 바뀐 경우에는 history를 만들지 않습니다.
 
 삭제된 snapshot 테이블:
 

@@ -1,6 +1,7 @@
 ﻿from pathlib import Path
 
 from ownerclan_API.api.client import OwnerclanGraphQLError
+from ownerclan_API.api.queries import all_items_query
 from ownerclan_API.workflows.collect_by_categories import collect_by_categories, collect_by_categories_parallel
 from ownerclan_API.config import (
     IncrementalConfig,
@@ -441,7 +442,13 @@ def test_options_stock_status_normalization_and_source_specific_preserved():
     item["status"] = "unavailable"
     item["pricePolicy"] = "fixed"
     item["openmarketSellable"] = False
-    item["metadata"] = {"vendorKey": "V1"}
+    item["noReturnReason"] = "custom reason"
+    item["returnCriteria"] = "vendor"
+    item["metadata"] = {
+        "vendorKey": "V1",
+        "returnShippingFee": 5000,
+        "productNotificationInformation": {"code": "etc"},
+    }
 
     product = normalize_item(item, "2026-08-24T00:00:00+09:00")
 
@@ -452,6 +459,19 @@ def test_options_stock_status_normalization_and_source_specific_preserved():
     assert product["status"] == "unavailable"
     assert product["sourceSpecific"]["pricePolicy"] == "fixed"
     assert product["sourceSpecific"]["vendorKey"] == "V1"
+    assert product["sourceSpecific"]["noReturnReason"] == "custom reason"
+    assert product["sourceSpecific"]["returnCriteria"] == "vendor"
+    assert product["sourceSpecific"]["returnShippingFee"] == 5000
+    assert product["sourceSpecific"]["productNotificationInformation"] == {"code": "etc"}
+
+
+def test_all_items_query_requests_metadata_and_return_fields():
+    query = all_items_query(first=1)
+    minimal_query = all_items_query(first=1, minimal=True)
+
+    for expected in ("metadata", "noReturnReason", "returnCriteria", "returnable", "guaranteedShippingPeriod", "attributes"):
+        assert expected in query
+        assert expected in minimal_query
 
 
 def test_metadata_content_keywords_are_not_saved_and_images_are_normalized():

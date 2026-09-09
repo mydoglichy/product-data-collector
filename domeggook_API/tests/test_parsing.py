@@ -161,6 +161,71 @@ def test_detail_parser_maps_resale_prices():
     assert products[0]["prices"]["resaleRecommendedPrice"] == 2920
 
 
+def test_detail_parser_preserves_source_specific_risk_fields():
+    payload = {
+        "domeggook": {
+            "item": [
+                {
+                    "basis": {"no": "12345678", "section": "direct", "status": "rejected", "tax": "taxable"},
+                    "price": {
+                        "domeOrg": "2,000",
+                        "supplyOrg": "1,900",
+                        "sample": "1,500",
+                        "sampleDiscountBasis": "10,000",
+                        "labeledPrice": {"useLabeledPrice": True, "labeledCapacity": "100", "labeledUnit": "ml"},
+                    },
+                    "qty": {"domeLoq": "50"},
+                    "deli": {
+                        "periodDeli": "1",
+                        "reqCcno": True,
+                        "shippingArea": "61127",
+                        "merge": {"enable": "c", "basePrice": "50,000"},
+                        "feeExtra": {"useDeliPro": True},
+                    },
+                    "seller": {
+                        "type": "간이과세자",
+                        "vacation": {"startDate": "2026-01-01", "endDate": "2026-01-03", "days": 3},
+                    },
+                    "detail": {
+                        "safetyCert": {"cert": "Y", "no": "KC-1"},
+                        "infoDuty": {"type": "etc", "item": [{"name": "n", "desc": "d"}]},
+                    },
+                    "category": {
+                        "parents": {"elem": [{"code": "01", "name": "root", "depth": "1"}]},
+                        "current": {"code": "01_01", "name": "leaf", "depth": "2"},
+                    },
+                    "popular": {"code": "all", "name": "popular"},
+                    "priceCompare": {"sole": True, "min": 1000},
+                    "return": {"deliAmt": "4,000", "deliAmtDouble": True},
+                }
+            ]
+        }
+    }
+
+    products, failures = parse_detail_products(payload, "2026-08-22T09:00:00+09:00")
+
+    assert failures == []
+    product = products[0]
+    assert product["prices"]["domeOriginalSupplyPrice"] == 2000
+    assert product["prices"]["supplyOriginalSupplyPrice"] == 1900
+    assert product["prices"]["samplePrice"] == 1500
+    assert product["prices"]["sampleDiscountBasis"] == 10000
+    assert product["prices"]["labeledCapacity"] == 100
+    assert product["inventory"]["domeMaxOrderQuantity"] == 50
+    assert product["shipping"]["preparationPeriodDays"] == 1
+    assert product["shipping"]["customsClearanceNumberRequired"] is True
+    assert product["shipping"]["bundleShipping"] == {"enabled": "c", "basePrice": 50000}
+    assert product["category"]["parents"] == [{"code": "01", "name": "root", "depth": 1}]
+    source_specific = product["sourceSpecific"]
+    assert source_specific["taxInvoiceRisk"] is True
+    assert source_specific["seller"]["vacation"]["days"] == 3
+    assert source_specific["detail"]["safetyCert"] == {"cert": "Y", "no": "KC-1"}
+    assert source_specific["detail"]["infoDuty"]["type"] == "etc"
+    assert source_specific["priceCompare"] == {"sole": True, "min": 1000}
+    assert source_specific["popular"] == {"code": "all", "name": "popular"}
+    assert source_specific["returnPolicy"] == {"deliAmt": 4000, "deliAmtDouble": True}
+
+
 def test_detail_item_level_error_does_not_drop_batch():
     payload = {
         "domeggook": {

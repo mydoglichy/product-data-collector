@@ -81,16 +81,24 @@ def normalize_item(item: dict[str, Any], collected_at: str) -> dict[str, Any]:
             "pricePolicy": item.get("pricePolicy"),
             "taxFree": item.get("taxFree"),
             "adultOnly": item.get("adultOnly"),
+            "isPublic": item.get("isPublic"),
+            "isUsed": item.get("isUsed"),
             "returnable": item.get("returnable"),
+            "noReturnReason": item.get("noReturnReason"),
+            "returnCriteria": item.get("returnCriteria"),
+            "returnShippingFee": _metadata_value(metadata, "returnShippingFee"),
             "guaranteedShippingPeriod": number_or_original(item.get("guaranteedShippingPeriod")),
             "openmarketSellable": item.get("openmarketSellable"),
             "boxQuantity": number_or_original(item.get("boxQuantity")),
             "attributes": item.get("attributes"),
             "closingTime": item.get("closingTime"),
-            "vendorKey": metadata.get("vendorKey") if isinstance(metadata, dict) else None,
-            "certificateInformation": metadata.get("certificateInformation") if isinstance(metadata, dict) else None,
-            "grade": metadata.get("grade") if isinstance(metadata, dict) else None,
-            "gradeDetail": metadata.get("gradeDetail") if isinstance(metadata, dict) else None,
+            "vendorKey": _metadata_value(metadata, "vendorKey"),
+            "vendorNotice": _metadata_value(metadata, "vendorNotice"),
+            "returnAddressCode": _metadata_value(metadata, "returnAddressCode"),
+            "certificateInformation": _metadata_value(metadata, "certificateInformation"),
+            "productNotificationInformation": _metadata_value(metadata, "productNotificationInformation"),
+            "grade": _metadata_value(metadata, "grade"),
+            "gradeDetail": _metadata_value(metadata, "gradeDetail"),
         },
         "raw": raw,
     }
@@ -146,6 +154,10 @@ def calculate_total_stock(options: list[dict[str, Any]]) -> int | None:
 
 def number_or_original(value: Any) -> int | float | Any:
     return parse_number(value)
+
+
+def _metadata_value(metadata: Any, key: str) -> Any:
+    return metadata.get(key) if isinstance(metadata, dict) else None
 
 
 def infer_free_shipping(shipping_fee: Any, shipping_type: Any) -> bool | None:
