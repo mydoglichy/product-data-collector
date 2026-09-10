@@ -114,6 +114,8 @@ python -m coupang_API --dry-run
 - `product_search_ranks`
 - `product_discovery_targets`
 
+`product_raw_samples`는 디버깅용 원본 sample만 저장하며, 플랫폼별 최대 100개만 보관합니다. 새 sample 저장 후 초과분은 최신 `collected_at` 기준으로 정리합니다.
+
 ## Batch 저장
 
 상품 저장은 batch 단위로 처리합니다.

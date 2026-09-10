@@ -23,7 +23,7 @@ python scripts\run_daily_collector.py --platform coupang --dry-run
 - requests per minute: `40`
 - keyword당 검색 limit: `10`
 - image size: `512x512`
-- raw sample limit: `100` per platform
+- raw sample limit: 플랫폼별 최대 `100`개
 
 쿠팡 파트너스는 HTTP 200이어도 JSON `rCode`로 제한을 반환할 수 있으므로 client가 응답 본문을 함께 검사합니다. 로컬 관측 내용은 [COUPANG_PARTNERS_RATE_LIMIT_REPORT.md](../tests/probes/COUPANG_PARTNERS_RATE_LIMIT_REPORT.md)에 따로 둡니다.
 
