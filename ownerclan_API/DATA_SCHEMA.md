@@ -13,6 +13,7 @@
 | `products.image_url` | `images[0]` 또는 첫 번째 이미지 필드 |
 | `products.backup_image_url` | `images[1]` 또는 두 번째 이미지 필드 |
 | `products.status` | 정규화된 판매 상태 |
+| `products.source_specific` | `metadata.vendorKey`, `metadata.certificateInformation`, `metadata.productNotificationInformation`, `metadata.returnShippingFee`, `returnable`, `noReturnReason`, `returnCriteria`, `guaranteedShippingPeriod`, `openmarketSellable`, `attributes` 등 플랫폼 전용 보조 정보 |
 
 ## 핵심 history
 

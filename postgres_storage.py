@@ -183,6 +183,7 @@ def init_schema(connection: Connection[Any]) -> None:
             product_url TEXT NULL,
             image_url TEXT NULL,
             backup_image_url TEXT NULL,
+            source_specific JSONB NOT NULL DEFAULT '{}'::jsonb,
             status TEXT NULL,
             seller_external_id TEXT NULL,
             seller_nickname TEXT NULL,
@@ -253,6 +254,7 @@ def init_schema(connection: Connection[Any]) -> None:
         )
         """,
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS backup_image_url TEXT NULL",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS source_specific JSONB NOT NULL DEFAULT '{}'::jsonb",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS status TEXT NULL",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS seller_external_id TEXT NULL",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS seller_nickname TEXT NULL",
@@ -1064,6 +1066,7 @@ def _bulk_upsert_products(
                 product_url,
                 image_url,
                 backup_image_url,
+                source_specific,
                 status,
                 seller_external_id,
                 seller_nickname,
@@ -1075,12 +1078,13 @@ def _bulk_upsert_products(
                 first_seen_at,
                 last_collected_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (platform, external_product_id) DO UPDATE SET
                 product_name = EXCLUDED.product_name,
                 product_url = EXCLUDED.product_url,
                 image_url = EXCLUDED.image_url,
                 backup_image_url = EXCLUDED.backup_image_url,
+                source_specific = EXCLUDED.source_specific,
                 status = EXCLUDED.status,
                 seller_external_id = EXCLUDED.seller_external_id,
                 seller_nickname = EXCLUDED.seller_nickname,
@@ -1105,6 +1109,7 @@ def _product_upsert_params(row: dict[str, Any], existing: dict[str, Any] | None)
         row["product_url"],
         row["image_url"],
         row["backup_image_url"],
+        Jsonb(_json_safe(row["source_specific"])),
         row["status"],
         seller["id"],
         seller["nickname"],
@@ -1219,6 +1224,7 @@ def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> 
         "product_url": _first_text(current, "productUrl", "affiliateUrl", "url"),
         "image_url": _first_text(current, "imageUrl", "productImage"),
         "backup_image_url": _first_text(current, "backupImageUrl"),
+        "source_specific": _source_specific_row(current),
         "status": _text_or_none(current.get("status")),
         "seller": seller,
         "prices_payload": prices,
@@ -1245,6 +1251,15 @@ def _seller_row(seller: dict[str, Any]) -> dict[str, Any]:
         "average_satisfaction": _text_or_none(seller.get("averageSatisfaction")),
         "review_count": _decimal_or_none(seller.get("reviewCount")),
     }
+
+
+def _source_specific_row(current: dict[str, Any]) -> dict[str, Any]:
+    source_specific = current.get("sourceSpecific")
+    row = dict(source_specific) if isinstance(source_specific, dict) else {}
+    category = current.get("category")
+    if isinstance(category, dict) and any(_has_value(value) for value in category.values()):
+        row.setdefault("category", category)
+    return row
 
 
 def _parse_datetime(value: str) -> datetime:

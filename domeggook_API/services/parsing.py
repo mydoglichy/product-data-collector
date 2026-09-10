@@ -67,15 +67,23 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
     qty = _first_dict(item, ("qty",))
     dome = _first_dict(item, ("dome", "domeggook", "domestic", "marketDome"))
     supply = _first_dict(item, ("supply", "domeme", "marketSupply"))
-    price_labeled = _first_dict(price, ("labeledPrice",))
+    price_labeled = _first_dict(item, ("labeledPrice",)) or _first_dict(price, ("labeledPrice",))
     price_resale = _first_dict(price, ("resale",))
     deli_dome = _first_dict(_first_dict(item, ("deli",)), ("dome",))
     deli_supply = _first_dict(_first_dict(item, ("deli",)), ("supply",))
     seller = _first_dict(item, ("seller", "sellerInfo", "mem", "member"))
     category = _first_dict(item, ("category", "cate", "cat"))
     category_current = _first_dict(category, ("current",))
+    category_parents = _first_dict(category, ("parents",))
     delivery = _first_dict(item, ("deli", "delivery", "deliveryInfo", "ship", "shipping"))
     fee_extra = _first_dict(delivery, ("feeExtra",))
+    merge = _first_dict(delivery, ("merge",))
+    detail = _first_dict(item, ("detail",))
+    desc = _first_dict(item, ("desc",))
+    desc_license = _first_dict(desc, ("license",))
+    return_policy = _first_dict(item, ("return", "returnPolicy"))
+    popular = _first_dict(item, ("popular",))
+    price_compare = _first_dict(item, ("priceCompare",))
     channel = _first_dict(item, ("channel",))
     dome_fee_raw = _coalesce(_get(deli_dome, "fee", "tbl"), _get(dome, "deliveryFee", "shipFee"))
     supply_fee_raw = _coalesce(_get(deli_supply, "fee", "tbl"), _get(supply, "deliveryFee", "shipFee"))
@@ -94,14 +102,21 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
         "collectedAt": collected_at,
         "status": _coalesce(_get(basis, "status"), _get(item, "status", "itemStatus", "saleStatus")),
         "productName": _coalesce(_get(basis, "title"), _get(item, "title", "itemName", "name")),
+        "productUrl": _get(item, "url", "productUrl"),
         "registeredAt": _coalesce(_get(basis, "dateReg"), _get(item, "regDate", "regDt", "createdAt")),
         "saleStartedAt": _coalesce(_get(basis, "dateStart"), _get(item, "startDate", "saleStartDate", "saleStartedAt")),
         "saleEndedAt": _coalesce(_get(basis, "dateEnd"), _get(item, "endDate", "saleEndDate", "saleEndedAt")),
         "prices": {
             "domeCurrentSupplyPrice": _number(_coalesce(_get(price, "dome"), _get(dome, "price", "salePrice", "supplyPrice"))),
-            "domeOriginalSupplyPrice": _number(_get(dome, "orgPrice", "originalPrice", "beforeDiscountPrice")),
+            "domeOriginalSupplyPrice": _number(_coalesce(_get(price, "domeOrg"), _get(dome, "orgPrice", "originalPrice", "beforeDiscountPrice"))),
+            "samplePrice": _number(_get(price, "sample")),
+            "sampleDiscountBasis": _number(_get(price, "sampleDiscountBasis")),
             "supplyCurrentSupplyPrice": _number(_coalesce(_get(price, "supply"), _get(supply, "price", "salePrice", "supplyPrice"))),
-            "supplyOriginalSupplyPrice": _number(_get(supply, "orgPrice", "originalPrice", "beforeDiscountPrice")),
+            "supplyOriginalSupplyPrice": _number(_coalesce(_get(price, "supplyOrg"), _get(supply, "orgPrice", "originalPrice", "beforeDiscountPrice"))),
+            "useLabeledPrice": _get(price_labeled, "useLabeledPrice"),
+            "labeledCapacity": _number(_get(price_labeled, "labeledCapacity")),
+            "labeledUnit": _get(price_labeled, "labeledUnit"),
+            "labeledUnitPrice": _first_dict(price_labeled, ("unitPrice",)),
             "minimumRetailPrice": _number(_coalesce(_get(price_labeled, "low", "minimum"), _get(item, "minPrice", "minimumRetailPrice", "lowPrice"))),
             "recommendedRetailPrice": _number(_coalesce(_get(price_labeled, "recommend", "recommended"), _get(item, "recommendPrice", "recommendedRetailPrice", "recPrice"))),
             "resaleMinimumPrice": _number(_get(price_resale, "minimum", "minumum")),
@@ -110,7 +125,7 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
         "inventory": {
             "stockQuantity": _number(_coalesce(_get(qty, "inventory"), _get(item, "stock", "stockQty", "quantity"))),
             "domeMoq": _number(_coalesce(_get(qty, "domeMoq"), _get(dome, "minOrderQty", "moq", "minimumOrderQuantity"))),
-            "domeMaxOrderQuantity": _number(_get(dome, "maxOrderQty", "maximumOrderQuantity")),
+            "domeMaxOrderQuantity": _number(_coalesce(_get(qty, "domeLoq"), _get(dome, "maxOrderQty", "maximumOrderQuantity"))),
             "domeOrderUnit": _number(_coalesce(_get(qty, "domeUnit"), _get(dome, "orderUnit", "unitQty", "unit"))),
             "supplyOrderUnit": _number(_coalesce(_get(qty, "supplyUnit"), _get(supply, "orderUnit", "unitQty", "unit"))),
         },
@@ -132,14 +147,18 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
             "supplyFeeTable": _get(deli_supply, "tbl"),
             "feeExtraJeju": _number(_get(fee_extra, "jeju")),
             "feeExtraIslands": _number(_get(fee_extra, "islands")),
-            "remoteAreaFee": {
-                "jeju": _number(_get(fee_extra, "jeju")),
-                "islands": _number(_get(fee_extra, "islands")),
-            },
+            "remoteAreaFee": _remote_area_fee(fee_extra),
             "preparationPeriod": _number(_get(delivery, "wating", "preparationPeriod", "preparationDays", "readyDays")),
+            "preparationPeriodDays": _number(_get(delivery, "periodDeli")),
             "averageShippingDays": _number(_get(delivery, "sendAvg", "averageShippingDays", "avgDeliveryDays", "avgShipDays")),
             "fastShipping": _get(delivery, "fastDeli", "fastShipping", "quickDelivery", "isFastShipping"),
             "overseasDirectShipping": _get(delivery, "fromOversea", "overseasDirectShipping", "overseaDelivery", "isOverseasDirect"),
+            "customsClearanceNumberRequired": _get(delivery, "reqCcno"),
+            "shippingArea": _get(delivery, "shippingArea"),
+            "bundleShipping": {
+                "enabled": _get(merge, "enable"),
+                "basePrice": _number(_get(merge, "basePrice")),
+            },
         },
         "markets": {
             "domeOnSale": _coalesce(_get(channel, "dome"), _get(dome, "onSale", "isSale", "enabled")),
@@ -163,6 +182,48 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
         "category": {
             "code": _get(category_current, "code") or _get(category, "code", "categoryCode", "cateCode"),
             "name": _get(category_current, "name") or _get(category, "name", "categoryName", "cateName"),
+            "depth": _number(_get(category_current, "depth")),
+            "parents": _category_parent_elements(category_parents),
+        },
+        "sourceSpecific": {
+            "basis": {
+                "section": _get(basis, "section"),
+                "nego": _get(basis, "nego"),
+                "adult": _get(basis, "adult"),
+                "secretItem": _get(basis, "secretItem"),
+                "tax": _get(basis, "tax"),
+            },
+            "directSale": _get(basis, "section") == "직접판매",
+            "distributionRiskStatus": _distribution_risk_status(_coalesce(_get(basis, "status"), _get(item, "status", "itemStatus", "saleStatus"))),
+            "taxInvoiceRisk": _tax_invoice_risk(_get(seller, "type", "sellerType")),
+            "seller": {
+                "global": _get(seller, "global"),
+                "power": _get(seller, "power"),
+                "company": _first_dict(seller, ("company",)),
+                "vacation": _first_dict(seller, ("vacation",)),
+            },
+            "detail": {
+                "size": _get(detail, "size"),
+                "weight": _get(detail, "weight"),
+                "country": _get(detail, "country"),
+                "manufacturer": _get(detail, "manufacturer"),
+                "model": _get(detail, "model"),
+                "oversea": _get(detail, "oversea"),
+                "itemCustomCode": _get(detail, "itemCustomCode"),
+                "safetyCert": _first_dict(detail, ("safetyCert",)),
+                "infoDuty": _first_dict(detail, ("infoDuty",)),
+            },
+            "category": {
+                "current": category_current,
+                "parents": _category_parent_elements(category_parents),
+            },
+            "popular": popular,
+            "priceCompare": price_compare,
+            "returnPolicy": {
+                "deliAmt": _number(_get(return_policy, "deliAmt")),
+                "deliAmtDouble": _get(return_policy, "deliAmtDouble"),
+            },
+            "descriptionLicense": desc_license,
         },
     }
     if image_urls:
@@ -246,6 +307,44 @@ def _image_urls(*values: Any) -> list[str]:
                 seen.add(url)
                 urls.append(url)
     return urls
+
+
+def _category_parent_elements(parents: dict[str, Any]) -> list[dict[str, Any]]:
+    elems = parents.get("elem") if isinstance(parents, dict) else None
+    result: list[dict[str, Any]] = []
+    for elem in _as_list(elems):
+        if not isinstance(elem, dict):
+            continue
+        result.append(
+            {
+                "code": _get(elem, "code"),
+                "name": _get(elem, "name"),
+                "depth": _number(_get(elem, "depth")),
+            }
+        )
+    return result
+
+
+def _remote_area_fee(fee_extra: dict[str, Any]) -> dict[str, Any]:
+    candidates = {
+        "jeju": _number(_get(fee_extra, "jeju")),
+        "islands": _number(_get(fee_extra, "islands")),
+        "useQuantityProportional": _get(fee_extra, "useDeliPro"),
+    }
+    return {key: value for key, value in candidates.items() if value is not None}
+
+
+def _distribution_risk_status(status: Any) -> str | None:
+    if not isinstance(status, str):
+        return None
+    text = status.strip()
+    return text if text in {"승인거부", "아웃벌점 제재"} else None
+
+
+def _tax_invoice_risk(seller_type: Any) -> bool | None:
+    if not isinstance(seller_type, str) or not seller_type.strip():
+        return None
+    return seller_type.strip() in {"간이과세자", "개인판매자"}
 
 
 def _iter_image_urls(value: Any):

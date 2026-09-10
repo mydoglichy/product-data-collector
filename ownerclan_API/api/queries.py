@@ -37,11 +37,14 @@ options {
 taxFree
 adultOnly
 returnable
+noReturnReason
+returnCriteria
 guaranteedShippingPeriod
 openmarketSellable
 boxQuantity
 attributes
 closingTime
+metadata
 """
 
 MINIMAL_ITEM_FIELDS = """
@@ -74,7 +77,13 @@ options {
 }
 taxFree
 adultOnly
+returnable
+noReturnReason
+returnCriteria
+guaranteedShippingPeriod
 openmarketSellable
+attributes
+metadata
 """
 
 

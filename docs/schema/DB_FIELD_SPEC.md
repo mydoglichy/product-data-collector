@@ -24,6 +24,7 @@
 | `product_url` | `TEXT` | Yes | 최신 상품 URL |
 | `image_url` | `TEXT` | Yes | 최신 대표 이미지 URL |
 | `backup_image_url` | `TEXT` | Yes | 최신 예비 이미지 URL |
+| `source_specific` | `JSONB` | No | 플랫폼별 최신 보조/리스크/고시/정책 정보. 기본값 `{}` |
 | `status` | `TEXT` | Yes | 최신 판매 상태 |
 | `seller_external_id` | `TEXT` | Yes | 판매자 ID |
 | `seller_nickname` | `TEXT` | Yes | 판매자 닉네임 |

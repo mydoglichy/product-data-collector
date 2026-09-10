@@ -7,7 +7,7 @@
 1. 플랫폼별 parser/normalizer가 API 응답을 공통 상품 구조로 정규화합니다.
 2. `save_product_snapshots_if_enabled()`가 정규화된 상품을 batch로 모읍니다.
 3. batch의 기존 `products` row와 최신 `product_history` row를 한 번에 조회합니다.
-4. 상품 master 정보는 `products`에 bulk upsert합니다.
+4. 상품 master 정보와 플랫폼별 보조/리스크 정보는 `products`에 bulk upsert합니다.
 5. 가격, 재고, 배송, 상태, MOQ/옵션 등 추세 대상 값이 최초 수집되었거나 실제로 변경된 상품만 `product_history`에 bulk insert합니다.
 6. `save_product_raw_samples_if_enabled()`는 제한된 raw sample만 `product_raw_samples`에 저장합니다.
 7. `save_search_ranks_if_enabled()`는 순위 의미가 있는 discovery 결과만 `product_search_ranks`에 저장합니다.
@@ -15,7 +15,9 @@
 
 ## 변경 감지
 
-`products`에는 상품명, URL, 이미지, 판매자 정보 같은 master 최신값만 저장합니다. 이 값만 바뀐 경우에는 `product_history` row를 만들지 않습니다.
+`products`에는 상품명, URL, 이미지, 판매자 정보 같은 master 최신값과 `source_specific` 플랫폼별 보조 정보를 저장합니다. 이 값만 바뀐 경우에는 `product_history` row를 만들지 않습니다.
+
+`source_specific`은 공통 컬럼으로 펼치기 애매한 공급사별 최신 보조 정보 저장 위치입니다. 도매꾹/도매매는 인증정보, 상품정보고시, 반품정책, 인기/최저가 비교, 판매자 휴가, 세금계산서 리스크 보조값을 저장하고, 오너클랜은 `metadata`의 인증정보/상품정보고시/반품배송비와 `openmarketSellable`, `attributes` 등을 저장합니다.
 
 `product_history`는 최신 history row의 핵심 상태와 현재 정규화 상태를 비교합니다. 가격만 바뀌어도 해당 시점의 가격, 재고, 배송 전체 상태를 함께 저장합니다. 값이 모두 동일하면 새 history row를 저장하지 않습니다.
 
