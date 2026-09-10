@@ -102,7 +102,6 @@ Indexes:
 | `reason` | `TEXT` | Yes | 수집/발견 사유 |
 | `external_product_id` | `TEXT` | No | 플랫폼 원본 상품 ID |
 | `rank` | `INTEGER` | No | 검색/discovery 결과 순위 |
-| `payload` | `JSONB` | No | 순위 결과 원본 보조 payload. 기본값 `{}` |
 | `created_at` | `TIMESTAMPTZ` | No | row 생성 시각. 기본값 `now()` |
 
 Unique: `(platform, collected_at, keyword, category_code, market, sort, external_product_id, rank)`
@@ -128,7 +127,6 @@ Indexes:
 | `category_name` | `TEXT` | Yes | 발견 카테고리명 |
 | `market` | `TEXT` | Yes | 발견 마켓 구분 |
 | `reason` | `TEXT` | Yes | 발견/수집 사유 |
-| `payload` | `JSONB` | No | 발견 결과 원본 보조 payload. 기본값 `{}` |
 | `created_at` | `TIMESTAMPTZ` | No | row 생성 시각. 기본값 `now()` |
 | `updated_at` | `TIMESTAMPTZ` | No | 마지막 갱신 시각. 기본값 `now()` |
 
