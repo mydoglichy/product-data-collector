@@ -27,6 +27,6 @@
 
 ## raw sample과 상태
 
-예전 `data/raw/coupang_*_raw_{keyword}.json` 파일은 더 이상 생성하지 않습니다. raw sample은 `product_raw_samples`에 저장하며, 저장 호출당 최대 3개 상품까지만 보존합니다.
+예전 `data/raw/coupang_*_raw_{keyword}.json` 파일은 더 이상 생성하지 않습니다. raw sample은 `product_raw_samples`에 저장하며, 플랫폼별 최대 100개 상품까지만 보존합니다.
 
 `data/state/product_search_checkpoint.json`만 재시작 상태로 유지합니다. 모든 keyword가 성공하면 checkpoint 파일은 삭제됩니다.

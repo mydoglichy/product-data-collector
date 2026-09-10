@@ -8,6 +8,8 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
+from postgres_storage import MAX_RAW_SAMPLE_RETENTION
+
 MAX_REQUESTS_PER_MINUTE = 50
 DEFAULT_REQUESTS_PER_MINUTE = 40
 
@@ -19,7 +21,7 @@ class CollectorConfig:
     srp_link_only: bool = False
     sub_id: str | None = None
     requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE
-    raw_sample_limit: int = 3
+    raw_sample_limit: int = MAX_RAW_SAMPLE_RETENTION
 
 
 def load_config(path: Path) -> CollectorConfig:
@@ -38,7 +40,7 @@ def load_config(path: Path) -> CollectorConfig:
     output = payload.get("output") or {}
     if not isinstance(output, dict):
         raise ValueError("config.yaml output must be a mapping")
-    raw_sample_limit = int(output.get("raw_sample_limit", 3))
+    raw_sample_limit = int(output.get("raw_sample_limit", MAX_RAW_SAMPLE_RETENTION))
     if raw_sample_limit < 0:
         raise ValueError("output.raw_sample_limit must be zero or greater")
 

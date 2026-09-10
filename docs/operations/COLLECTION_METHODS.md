@@ -176,7 +176,7 @@ runtime cap은 `--domeggook-max-runtime-hours`로 지정합니다. deadline에 �
 - `requests_per_minute=40`
 - keyword당 API 호출: 1회
 - keyword당 상품 limit: 10
-- raw sample limit: 3
+- raw sample limit: 100 per platform
 
 Rate limiter는 60초 rolling window 방식입니다. 즉 40 RPM 설정은 “1.5초마다 균등 호출”이 아니라 “최근 60초 안의 호출 수를 40개 이하로 유지”하는 방식입니다. 그래서 짧은 실행에서는 초반 burst가 가능하지만, 창이 차면 가장 오래된 호출이 만료될 때까지 대기합니다.
 

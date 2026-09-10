@@ -33,6 +33,7 @@ TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 DOMEGGOOK_RANKED_SORTS = {"ha", "rd"}
 DEFAULT_PRODUCT_BATCH_SIZE = 1000
 PRODUCT_BATCH_SIZE_ENV = "POSTGRES_PRODUCT_BATCH_SIZE"
+MAX_RAW_SAMPLE_RETENTION = 100
 LOGGER = logging.getLogger(__name__)
 _SCHEMA_INIT_LOCK = Lock()
 _SCHEMA_INIT_KEYS: set[tuple[str, int, str, str]] = set()
@@ -887,7 +888,7 @@ def _raw_sample_rows(
 
 
 def _raw_sample_retention_limit(limit: int) -> int:
-    return max(0, min(limit, 3))
+    return 0 if limit <= 0 else MAX_RAW_SAMPLE_RETENTION
 
 
 def _insert_raw_sample_rows(connection: Connection[Any], rows: list[dict[str, Any]]) -> None:

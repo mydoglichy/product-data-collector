@@ -12,7 +12,7 @@ from ..config import CollectorConfig, load_config, load_credentials, load_keywor
 from ..services.models import parse_product_records
 from ..api.rate_limiter import RateLimiter
 from ..persistence.storage import dedupe_records
-from postgres_storage import save_products_with_raw_samples_if_enabled
+from postgres_storage import MAX_RAW_SAMPLE_RETENTION, save_products_with_raw_samples_if_enabled
 
 
 LOGGER = logging.getLogger("coupang_API")
@@ -34,7 +34,7 @@ def collect_once(project_root: Path, config: CollectorConfig, *, dry_run: bool =
     keyword_scoped_product_count = 0
     duplicate_products = 0
     raw_saved_count = 0
-    raw_sample_limit = min(config.raw_sample_limit, 3)
+    raw_sample_limit = 0 if config.raw_sample_limit <= 0 else MAX_RAW_SAMPLE_RETENTION
     collected_products: dict[str, dict[str, object]] = {}
 
     LOGGER.info(

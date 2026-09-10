@@ -28,7 +28,7 @@ python scripts\run_daily_collector.py --platform domeggook
 - 순위 저장 대상 sort: `ha`, `rd`
 - 최근 상품 보강 sort: `da`
 - 상세 batch size: `50`
-- raw sample limit: `3`
+- raw sample limit: `100` per platform
 - API 예산: 분당 `120`, 시간당 `9000`, 일당 `14000`
 
 `--max-api-calls`는 실행 1회의 API 호출 상한을 덮어씁니다. `--max-runtime-hours`는 지정 시간에 도달하면 상태 파일을 저장하고 정상 중단합니다.

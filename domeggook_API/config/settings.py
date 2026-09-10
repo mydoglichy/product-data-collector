@@ -8,6 +8,8 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
+from postgres_storage import MAX_RAW_SAMPLE_RETENTION
+
 
 OFFICIAL_RATE_LIMIT_PER_MINUTE = 180
 OFFICIAL_RATE_LIMIT_PER_DAY = 15000
@@ -88,7 +90,7 @@ def load_config(path: Path) -> DomeggookConfig:
     if not 1 <= batch_size <= OFFICIAL_DETAIL_MAX_BATCH_SIZE:
         raise ValueError(f"details.batch_size must be between 1 and {OFFICIAL_DETAIL_MAX_BATCH_SIZE}")
 
-    raw_sample_limit = int(details.get("raw_sample_limit", 20))
+    raw_sample_limit = int(details.get("raw_sample_limit", MAX_RAW_SAMPLE_RETENTION))
     if raw_sample_limit < 0:
         raise ValueError("details.raw_sample_limit must be zero or greater")
 

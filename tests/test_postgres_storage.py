@@ -692,7 +692,7 @@ def test_save_products_with_raw_samples_prunes_to_platform_retention(monkeypatch
     monkeypatch.setattr(postgres_storage, "_save_product_batch_with_retry", lambda connection, batch: len(batch))
     products = [
         {"productId": f"raw-{index}", "collectedAt": "2026-08-30T10:00:00Z", "raw": {"index": index}}
-        for index in range(5)
+        for index in range(105)
     ]
     connection = _BulkConnection()
 
@@ -705,10 +705,10 @@ def test_save_products_with_raw_samples_prunes_to_platform_retention(monkeypatch
         raw_sample_limit=20,
     )
 
-    assert result["rawSampleCount"] == 3
-    assert len(connection.executemany_calls[0]["params"]) == 3
+    assert result["rawSampleCount"] == 100
+    assert len(connection.executemany_calls[0]["params"]) == 100
     assert any("DELETE FROM product_raw_samples" in call["statement"] for call in connection.execute_calls)
-    assert ("ownerclan", "ownerclan", 3) in [call["params"] for call in connection.execute_calls]
+    assert ("ownerclan", "ownerclan", 100) in [call["params"] for call in connection.execute_calls]
 
 
 def test_save_products_with_zero_raw_sample_limit_prunes_existing_samples(
