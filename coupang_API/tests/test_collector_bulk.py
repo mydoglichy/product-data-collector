@@ -85,6 +85,7 @@ def test_bulk_collector_resumes_from_checkpoint_and_saves_to_postgres(tmp_path, 
         "itemId": None,
         "keyword": "new-keyword",
         "productId": 100,
+        "productImage": "https://image",
         "productName": "product",
         "productPrice": 1000,
         "productUrl": "https://link.coupang.com/product",
@@ -93,7 +94,6 @@ def test_bulk_collector_resumes_from_checkpoint_and_saves_to_postgres(tmp_path, 
     }
     assert "collector" not in product
     assert "landingUrl" not in product
-    assert "productImage" not in product
     assert "requestedKeyword" not in product
 
 
