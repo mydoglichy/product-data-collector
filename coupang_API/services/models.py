@@ -15,6 +15,7 @@ class ProductSearchRecord:
     productName: str | None
     productPrice: int | float | str | None
     productUrl: str | None
+    productImage: str | None
     keyword: str | None
     rank: int | None
     isRocket: bool | None
@@ -51,6 +52,7 @@ def parse_product_records(
             productName=product.get("productName"),
             productPrice=_number(product.get("productPrice")),
             productUrl=product_url,
+            productImage=product.get("productImage"),
             keyword=product.get("keyword") or requested_keyword,
             rank=_rank(product.get("rank"), fallback=index),
             isRocket=product.get("isRocket"),

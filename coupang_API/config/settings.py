@@ -73,7 +73,7 @@ def load_keywords(path: Path) -> list[str]:
 
 
 def load_credentials(project_root: Path) -> tuple[str, str]:
-    load_dotenv(project_root / ".env", override=False)
+    load_dotenv(project_root / ".env", override=False, encoding="utf-8-sig")
     access_key = os.getenv("COUPANG_ACCESS_KEY")
     secret_key = os.getenv("COUPANG_SECRET_KEY")
     missing = [

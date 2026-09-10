@@ -1,4 +1,4 @@
-from coupang_API.config import load_config, load_keywords
+from coupang_API.config import load_config, load_credentials, load_keywords
 
 
 def test_keywords_txt_ignores_blank_comments_and_deduplicates(tmp_path):
@@ -60,3 +60,15 @@ def test_config_raw_sample_limit_defaults_and_validates(tmp_path):
         assert "raw_sample_limit" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_load_credentials_accepts_utf8_bom_env_file(tmp_path, monkeypatch):
+    monkeypatch.delenv("COUPANG_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("COUPANG_SECRET_KEY", raising=False)
+    (tmp_path / ".env").write_text(
+        "COUPANG_ACCESS_KEY=access\n"
+        "COUPANG_SECRET_KEY=secret\n",
+        encoding="utf-8-sig",
+    )
+
+    assert load_credentials(tmp_path) == ("access", "secret")

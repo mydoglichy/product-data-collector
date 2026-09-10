@@ -36,6 +36,7 @@ def test_normal_response_parsing():
             "productName": "product",
             "productPrice": 9900,
             "productUrl": "https://link.coupang.com/product?itemId=456&vendorItemId=789",
+            "productImage": "https://image",
             "keyword": "sunglasses case",
             "rank": 1,
             "isRocket": True,
@@ -92,10 +93,10 @@ def test_missing_fields_are_preserved_as_none_and_rank_falls_back_to_position():
     assert records[0]["vendorItemId"] is None
     assert records[0]["rank"] == 1
     assert records[0]["productName"] is None
+    assert records[0]["productImage"] is None
     assert records[0]["keyword"] == "wireless charger"
     assert records[0]["collectedAt"] == "2026-08-21T00:00:00Z"
     assert "landingUrl" not in records[0]
-    assert "productImage" not in records[0]
     assert "requestedKeyword" not in records[0]
     assert "collector" not in records[0]
 
