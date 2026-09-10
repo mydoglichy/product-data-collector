@@ -457,6 +457,7 @@ def test_options_stock_status_normalization_and_source_specific_preserved():
     assert product["inventory"]["stockQuantity"] == 5
     assert product["inventory"]["stockQuantitySource"] == "sum(options[].quantity)"
     assert product["status"] == "unavailable"
+    assert product["productUrl"] == "https://www.ownerclan.com/V2/product/view.php?selfcode=W9"
     assert product["sourceSpecific"]["pricePolicy"] == "fixed"
     assert product["sourceSpecific"]["vendorKey"] == "V1"
     assert product["sourceSpecific"]["noReturnReason"] == "custom reason"
@@ -506,6 +507,15 @@ def test_metadata_content_keywords_are_not_saved_and_images_are_normalized():
     assert "content" not in product["raw"]
     assert "searchKeywords" not in product["raw"]
     assert "images" not in product["raw"]
+
+
+def test_ownerclan_explicit_product_url_is_preserved() -> None:
+    item = _item("W12")
+    item["url"] = "https://example.com/custom-ownerclan-url"
+
+    product = normalize_item(item, "2026-08-24T00:00:00+09:00")
+
+    assert product["productUrl"] == "https://example.com/custom-ownerclan-url"
 
 
 def test_load_json_object_accepts_utf8_bom(tmp_path):

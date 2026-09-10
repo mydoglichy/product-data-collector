@@ -9,6 +9,7 @@
 | `products.platform` | `domeggook` |
 | `products.external_product_id` | `basis.no`, `no`, `itemNo` |
 | `products.product_name` | `basis.title` |
+| `products.product_url` | `productUrl`, `url`, `link` 등 원본 URL 필드. 없으면 `https://www.domeggook.com/{productId}` |
 | `products.status` | `basis.status` |
 | `products.image_url` | `thumb.original` 또는 첫 번째 이미지 URL |
 | `products.backup_image_url` | 두 번째 이미지 URL |

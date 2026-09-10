@@ -9,7 +9,7 @@
 | `products.platform` | `ownerclan` |
 | `products.external_product_id` | `productId` 또는 `productKey` |
 | `products.product_name` | 정규화된 상품명 |
-| `products.product_url` | 정규화된 상품 URL |
+| `products.product_url` | `productUrl`, `url`, `link` 등 원본 URL 필드. 없으면 `https://www.ownerclan.com/V2/product/view.php?selfcode={productKey}` |
 | `products.image_url` | `images[0]` 또는 첫 번째 이미지 필드 |
 | `products.backup_image_url` | `images[1]` 또는 두 번째 이미지 필드 |
 | `products.status` | 정규화된 판매 상태 |

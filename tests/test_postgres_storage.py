@@ -6,6 +6,7 @@ import pytest
 
 from postgres_storage import (
     _bulk_upsert_discovery_targets,
+    _bulk_upsert_products,
     _bulk_upsert_search_ranks,
     _count_new_discovery_targets,
     _discovery_target_rows,
@@ -103,6 +104,27 @@ def test_snapshot_row_normalizes_product_for_postgres() -> None:
     assert "comparable_fingerprint" not in row
     assert row["primary_price"] == 12000
     assert row["source_specific"] == {"openmarketSellable": True}
+
+
+def test_bulk_upsert_products_writes_source_specific_jsonb() -> None:
+    row = _snapshot_row(
+        "ownerclan",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "W9",
+            "productName": "Sample",
+            "productUrl": "https://www.ownerclan.com/V2/product/view.php?selfcode=W9",
+            "sourceSpecific": {"openmarketSellable": False, "vendorKey": "V1"},
+        },
+    )
+    assert row is not None
+    connection = _BulkConnection()
+
+    _bulk_upsert_products(connection, [row], {})
+
+    call = connection.executemany_calls[0]
+    assert "source_specific" in call["statement"]
+    assert call["params"][0][6].obj == {"openmarketSellable": False, "vendorKey": "V1"}
 
 
 def test_snapshot_row_preserves_falsy_inventory_and_shipping_values() -> None:

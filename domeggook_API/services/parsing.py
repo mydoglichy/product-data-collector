@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from typing import Any
+from urllib.parse import quote
 
 from numeric_utils import parse_number
 
@@ -102,7 +103,7 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
         "collectedAt": collected_at,
         "status": _coalesce(_get(basis, "status"), _get(item, "status", "itemStatus", "saleStatus")),
         "productName": _coalesce(_get(basis, "title"), _get(item, "title", "itemName", "name")),
-        "productUrl": _get(item, "url", "productUrl"),
+        "productUrl": product_url(product_id, item, basis),
         "registeredAt": _coalesce(_get(basis, "dateReg"), _get(item, "regDate", "regDt", "createdAt")),
         "saleStartedAt": _coalesce(_get(basis, "dateStart"), _get(item, "startDate", "saleStartDate", "saleStartedAt")),
         "saleEndedAt": _coalesce(_get(basis, "dateEnd"), _get(item, "endDate", "saleEndDate", "saleEndedAt")),
@@ -245,6 +246,20 @@ def compact_raw_item_for_snapshot(item: dict[str, Any]) -> dict[str, Any]:
     for key in ("keyword", "keywords"):
         result.pop(key, None)
     return result
+
+
+def product_url(product_id: str | None, *sources: dict[str, Any]) -> str | None:
+    for source in sources:
+        for key in ("productUrl", "productURL", "url", "link", "itemUrl", "itemURL"):
+            value = source.get(key)
+            if value in (None, ""):
+                continue
+            explicit_url = str(value).strip()
+            if explicit_url:
+                return explicit_url
+    if not product_id:
+        return None
+    return f"https://www.domeggook.com/{quote(product_id, safe='')}"
 
 
 def _detail_candidates(root: Any) -> list[Any]:
