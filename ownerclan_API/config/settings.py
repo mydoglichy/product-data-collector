@@ -8,6 +8,8 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
+from postgres_storage import MAX_RAW_SAMPLE_RETENTION
+
 
 VALID_ENVIRONMENTS = {"sandbox", "production"}
 MAX_ALL_ITEMS_FIRST = 1000
@@ -79,7 +81,9 @@ def load_config(path: Path, project_root: Path | None = None) -> OwnerclanConfig
     if page_size > MAX_ALL_ITEMS_FIRST:
         raise ValueError("incremental.page_size must be 1000 or less")
 
-    raw_sample_limit = int(output.get("raw_sample_limit", output.get("raw_retention_per_product", 3)))
+    raw_sample_limit = int(
+        output.get("raw_sample_limit", output.get("raw_retention_per_product", MAX_RAW_SAMPLE_RETENTION))
+    )
     if raw_sample_limit < 0:
         raise ValueError("output.raw_sample_limit must be zero or greater")
 

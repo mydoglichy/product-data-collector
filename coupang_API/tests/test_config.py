@@ -51,7 +51,7 @@ def test_config_raw_sample_limit_defaults_and_validates(tmp_path):
     invalid_path = tmp_path / "invalid.yaml"
     invalid_path.write_text("request: {}\noutput:\n  raw_sample_limit: -1\n", encoding="utf-8")
 
-    assert load_config(default_path).raw_sample_limit == 3
+    assert load_config(default_path).raw_sample_limit == 100
     assert load_config(custom_path).raw_sample_limit == 7
 
     try:

@@ -15,6 +15,6 @@ output:
   category_cache_path: ownerclan_API/data/state/categories.json
   state_dir: ownerclan_API/data/state
   log_dir: ownerclan_API/data/logs
-  raw_sample_limit: 3
+  raw_sample_limit: 100
 
 timezone: Asia/Seoul

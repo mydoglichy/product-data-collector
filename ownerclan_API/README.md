@@ -32,7 +32,7 @@ python scripts\run_daily_collector.py --platform ownerclan
 - request timeout: `15`초
 - request retry: `2`회
 - `Retry-After` 최대 대기 반영: `300`초
-- raw sample limit: `3`
+- raw sample limit: 플랫폼별 최대 `100`개
 
 `scripts\run_daily_collector.py --platform ownerclan`의 기본 운영값은 worker `8`, rate-limit 재시작 대기 `90`초, 일반 실패 재시작 대기 `60`초, 일반 실패 최대 재시작 `50`회입니다.
 

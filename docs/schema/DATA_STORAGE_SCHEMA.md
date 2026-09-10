@@ -9,7 +9,7 @@
 3. batch의 기존 `products` row와 최신 `product_history` row를 한 번에 조회합니다.
 4. 상품 master 정보와 플랫폼별 보조/리스크 정보는 `products`에 bulk upsert합니다.
 5. 가격, 재고, 배송, 상태, MOQ/옵션 등 추세 대상 값이 최초 수집되었거나 실제로 변경된 상품만 `product_history`에 bulk insert합니다.
-6. `save_product_raw_samples_if_enabled()`는 제한된 raw sample만 `product_raw_samples`에 저장합니다.
+6. `save_product_raw_samples_if_enabled()`는 제한된 raw sample만 `product_raw_samples`에 저장합니다. 플랫폼별 보관 수는 최대 100개이며, 새 sample 저장 후 초과분은 최신 `collected_at` 기준으로 정리합니다.
 7. `save_search_ranks_if_enabled()`는 순위 의미가 있는 discovery 결과만 `product_search_ranks`에 저장합니다.
 8. `save_discovered_product_ids_if_enabled()`는 상세 수집 대상 상품 ID를 `product_discovery_targets`에 저장합니다.
 

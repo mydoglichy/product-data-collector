@@ -33,6 +33,7 @@ TRUE_VALUES = {"1", "true", "yes", "y", "on"}
 DOMEGGOOK_RANKED_SORTS = {"ha", "rd"}
 DEFAULT_PRODUCT_BATCH_SIZE = 1000
 PRODUCT_BATCH_SIZE_ENV = "POSTGRES_PRODUCT_BATCH_SIZE"
+MAX_RAW_SAMPLE_RETENTION = 100
 LOGGER = logging.getLogger(__name__)
 _SCHEMA_INIT_LOCK = Lock()
 _SCHEMA_INIT_KEYS: set[tuple[str, int, str, str]] = set()
@@ -505,15 +506,20 @@ def _save_products_with_raw_samples(
     raw_sample_limit: int,
 ) -> dict[str, int]:
     product_list = list(products)
+    retention_limit = _raw_sample_retention_limit(raw_sample_limit)
     raw_rows = _raw_sample_rows(platform, collected_at, product_list, raw_sample_limit)
     snapshot_rows = [_snapshot_row(platform, collected_at, product) for product in _products_without_raw(product_list)]
     snapshot_rows = [row for row in snapshot_rows if row is not None]
-    if not raw_rows and not snapshot_rows:
+    if not raw_rows and not snapshot_rows and retention_limit > 0:
         return {"rawSampleCount": 0, "snapshotCount": 0}
 
     snapshot_count = 0
     if raw_rows:
         _insert_raw_sample_rows(connection, raw_rows)
+        _prune_raw_sample_rows(connection, platform, retention_limit)
+        connection.commit()
+    elif retention_limit == 0:
+        _prune_raw_sample_rows(connection, platform, retention_limit)
         connection.commit()
     for batch in _chunks(snapshot_rows, batch_size):
         try:
@@ -566,13 +572,16 @@ def save_product_raw_samples_if_enabled(
         raise ValueError("limit must be zero or greater")
 
     rows = _raw_sample_rows(platform, collected_at, products, limit)
-    if not rows:
+    retention_limit = _raw_sample_retention_limit(limit)
+    if not rows and retention_limit > 0:
         return 0
 
     config = load_postgres_config(project_root)
     with connect(config) as connection:
         ensure_schema_initialized(config, connection)
-        _insert_raw_sample_rows(connection, rows)
+        if rows:
+            _insert_raw_sample_rows(connection, rows)
+        _prune_raw_sample_rows(connection, platform, retention_limit)
         connection.commit()
     if logger is not None:
         logger.info("saved PostgreSQL raw samples count=%d", len(rows))
@@ -859,8 +868,9 @@ def _raw_sample_rows(
     limit: int,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    retention_limit = _raw_sample_retention_limit(limit)
     for product in products:
-        if len(rows) >= min(limit, 3):
+        if len(rows) >= retention_limit:
             break
         raw = product.get("raw")
         external_id = external_product_id(product)
@@ -875,6 +885,10 @@ def _raw_sample_rows(
             }
         )
     return rows
+
+
+def _raw_sample_retention_limit(limit: int) -> int:
+    return 0 if limit <= 0 else MAX_RAW_SAMPLE_RETENTION
 
 
 def _insert_raw_sample_rows(connection: Connection[Any], rows: list[dict[str, Any]]) -> None:
@@ -896,6 +910,26 @@ def _insert_raw_sample_rows(connection: Connection[Any], rows: list[dict[str, An
                 for row in rows
             ],
         )
+
+
+def _prune_raw_sample_rows(connection: Connection[Any], platform: str, retention_limit: int) -> None:
+    if retention_limit <= 0:
+        connection.execute("DELETE FROM product_raw_samples WHERE platform = %s", (platform,))
+        return
+    connection.execute(
+        """
+        DELETE FROM product_raw_samples
+        WHERE platform = %s
+          AND id NOT IN (
+              SELECT id
+              FROM product_raw_samples
+              WHERE platform = %s
+              ORDER BY collected_at DESC, id DESC
+              LIMIT %s
+          )
+        """,
+        (platform, platform, retention_limit),
+    )
 
 
 def _save_product_batch_with_retry(connection: Connection[Any], rows: list[dict[str, Any]]) -> int:

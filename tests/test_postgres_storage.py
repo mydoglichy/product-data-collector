@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+import postgres_storage
 from postgres_storage import (
     _bulk_upsert_discovery_targets,
     _bulk_upsert_products,
@@ -687,6 +688,53 @@ def test_discovery_and_rank_rows_are_bulk_upserted() -> None:
     assert [len(call["params"]) for call in connection.executemany_calls] == [2, 2]
 
 
+def test_save_products_with_raw_samples_prunes_to_platform_retention(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(postgres_storage, "_save_product_batch_with_retry", lambda connection, batch: len(batch))
+    products = [
+        {"productId": f"raw-{index}", "collectedAt": "2026-08-30T10:00:00Z", "raw": {"index": index}}
+        for index in range(105)
+    ]
+    connection = _BulkConnection()
+
+    result = postgres_storage._save_products_with_raw_samples(
+        connection=connection,
+        batch_size=100,
+        platform="ownerclan",
+        collected_at="2026-08-30T10:00:00Z",
+        products=products,
+        raw_sample_limit=20,
+    )
+
+    assert result["rawSampleCount"] == 100
+    assert len(connection.executemany_calls[0]["params"]) == 100
+    assert any("DELETE FROM product_raw_samples" in call["statement"] for call in connection.execute_calls)
+    assert ("ownerclan", "ownerclan", 100) in [call["params"] for call in connection.execute_calls]
+
+
+def test_save_products_with_zero_raw_sample_limit_prunes_existing_samples(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(postgres_storage, "_save_product_batch_with_retry", lambda connection, batch: len(batch))
+    connection = _BulkConnection()
+
+    result = postgres_storage._save_products_with_raw_samples(
+        connection=connection,
+        batch_size=100,
+        platform="ownerclan",
+        collected_at="2026-08-30T10:00:00Z",
+        products=[{"productId": "raw-1", "collectedAt": "2026-08-30T10:00:00Z", "raw": {"index": 1}}],
+        raw_sample_limit=0,
+    )
+
+    assert result["rawSampleCount"] == 0
+    assert connection.executemany_calls == []
+    assert any(
+        call["statement"] == "DELETE FROM product_raw_samples WHERE platform = %s"
+        and call["params"] == ("ownerclan",)
+        for call in connection.execute_calls
+    )
+
+
 class _SchemaResult:
     def fetchone(self):
         return None
@@ -748,9 +796,19 @@ class _BulkConnection:
     def __init__(self, *, existing_ids=None) -> None:
         self.existing_ids = set(existing_ids or [])
         self.executemany_calls = []
+        self.execute_calls = []
+        self.commits = 0
+        self.rollbacks = 0
 
     def cursor(self) -> _BulkCursor:
         return _BulkCursor(self)
 
     def execute(self, statement: str, params=None) -> _FetchAllResult:
+        self.execute_calls.append({"statement": statement.strip(), "params": params})
         return _FetchAllResult([{"external_product_id": value} for value in sorted(self.existing_ids)])
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1

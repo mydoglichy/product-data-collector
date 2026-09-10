@@ -6,4 +6,4 @@ request:
   srp_link_only: false
 
 output:
-  raw_sample_limit: 3
+  raw_sample_limit: 100
