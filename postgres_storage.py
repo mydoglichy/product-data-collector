@@ -229,7 +229,6 @@ def init_schema(connection: Connection[Any]) -> None:
             reason TEXT NULL,
             external_product_id TEXT NOT NULL,
             rank INTEGER NOT NULL,
-            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             CONSTRAINT product_search_ranks_history_key
                 UNIQUE (platform, collected_at, keyword, category_code, market, sort, external_product_id, rank)
@@ -248,7 +247,6 @@ def init_schema(connection: Connection[Any]) -> None:
             category_name TEXT NULL,
             market TEXT NULL,
             reason TEXT NULL,
-            payload JSONB NOT NULL DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             UNIQUE (platform, external_product_id)
@@ -277,6 +275,8 @@ def init_schema(connection: Connection[Any]) -> None:
         "ALTER TABLE product_search_ranks ALTER COLUMN category_code SET DEFAULT ''",
         "ALTER TABLE product_search_ranks ALTER COLUMN keyword SET NOT NULL",
         "ALTER TABLE product_search_ranks ALTER COLUMN category_code SET NOT NULL",
+        "ALTER TABLE product_search_ranks DROP COLUMN IF EXISTS payload",
+        "ALTER TABLE product_discovery_targets DROP COLUMN IF EXISTS payload",
         "DELETE FROM product_search_ranks WHERE rank <= 0",
         "DELETE FROM product_search_ranks WHERE platform = 'domeggook' AND sort NOT IN ('ha', 'rd')",
         "ALTER TABLE product_search_ranks DROP CONSTRAINT IF EXISTS product_search_ranks_platform_collected_market_sort_product_rank_key",
@@ -676,7 +676,6 @@ def _search_rank_rows(platform: str, records: Iterable[dict[str, Any]]) -> list[
                 "reason": _text_or_none(record.get("reason")),
                 "external_product_id": str(product_id),
                 "rank": rank,
-                "payload": record,
             }
         )
     return rows
@@ -697,15 +696,13 @@ def _bulk_upsert_search_ranks(connection: Connection[Any], rows: list[dict[str, 
                 sort,
                 reason,
                 external_product_id,
-                rank,
-                payload
+                rank
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (platform, collected_at, keyword, category_code, market, sort, external_product_id, rank) DO UPDATE SET
                 category_name = EXCLUDED.category_name,
                 category_path = EXCLUDED.category_path,
-                reason = EXCLUDED.reason,
-                payload = EXCLUDED.payload
+                reason = EXCLUDED.reason
             """,
             [
                 (
@@ -720,7 +717,6 @@ def _bulk_upsert_search_ranks(connection: Connection[Any], rows: list[dict[str, 
                     row["reason"],
                     row["external_product_id"],
                     row["rank"],
-                    Jsonb(_json_safe(row["payload"])),
                 )
                 for row in rows
             ],
@@ -749,7 +745,6 @@ def _discovery_target_rows(platform: str, records: Iterable[dict[str, Any]]) -> 
                 "category_name": _text_or_none(record.get("categoryName")),
                 "market": _text_or_none(record.get("market")),
                 "reason": _text_or_none(record.get("reason")),
-                "payload": record,
             }
         )
     return rows
@@ -787,10 +782,9 @@ def _bulk_upsert_discovery_targets(connection: Connection[Any], rows: list[dict[
                 category_code,
                 category_name,
                 market,
-                reason,
-                payload
+                reason
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (platform, external_product_id) DO UPDATE SET
                 last_discovered_at = EXCLUDED.last_discovered_at,
                 keyword = COALESCE(EXCLUDED.keyword, product_discovery_targets.keyword),
@@ -798,7 +792,6 @@ def _bulk_upsert_discovery_targets(connection: Connection[Any], rows: list[dict[
                 category_name = COALESCE(EXCLUDED.category_name, product_discovery_targets.category_name),
                 market = COALESCE(EXCLUDED.market, product_discovery_targets.market),
                 reason = COALESCE(EXCLUDED.reason, product_discovery_targets.reason),
-                payload = EXCLUDED.payload,
                 active = true,
                 updated_at = now()
             """,
@@ -813,7 +806,6 @@ def _bulk_upsert_discovery_targets(connection: Connection[Any], rows: list[dict[
                     row["category_name"],
                     row["market"],
                     row["reason"],
-                    Jsonb(_json_safe(row["payload"])),
                 )
                 for row in rows
             ],

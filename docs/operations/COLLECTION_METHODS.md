@@ -71,8 +71,8 @@ worker는 서로 다른 카테고리를 동시에 맡습니다. 같은 카테고
 4. discovery는 `(최하위 카테고리, market, sort)` 조합을 만들고 각 조합의 list page를 끝까지 순회합니다.
 5. market은 `dome`, `supply`를 모두 돕니다.
 6. sort는 `popular=ha`, `ranking=rd`, `recent=da`를 설정으로 갖고 있습니다.
-7. 발견한 상품 ID는 PostgreSQL `product_discovery_targets`에 저장합니다.
-8. `ha`, `rd`처럼 순위 의미가 있는 sort만 `product_search_ranks`에 저장합니다. `da`는 최근 등록/수정일 기준이라 ranking history로 저장하지 않습니다.
+7. 발견한 상품 ID와 발견 맥락 필드는 PostgreSQL `product_discovery_targets`에 저장합니다. 원본 discovery payload는 저장하지 않습니다.
+8. `ha`, `rd`처럼 순위 의미가 있는 sort의 순위 필드만 `product_search_ranks`에 저장합니다. `da`는 최근 등록/수정일 기준이라 ranking history로 저장하지 않습니다.
 
 상세 수집은 `product_discovery_targets`에서 active 상품 ID를 읽고 `getItemView`를 batch size 50으로 호출해 상품 master와 변경된 핵심 history를 저장합니다. 도매꾹 API가 간헐적으로 HTTP 200이지만 JSON이 아닌 본문을 반환하는 경우가 있어, 한 번에 묶는 상품 수를 100에서 50으로 낮췄습니다. `invalid_json`이 발생하면 같은 detail batch를 10초, 20초, 30초 간격으로 재시도하고, 그래도 실패할 때만 상태 파일을 남긴 뒤 멈춥니다.
 
@@ -141,7 +141,7 @@ discovery 상태는 `discovery-state.json` 또는 daily 최근 보강용 `recent
 - `sort`
 - `nextPage`
 
-discovery는 발견 상품과 순위 기록을 최대 5개 list page까지 모아 한 번에 저장합니다. 재개 상태는 DB 저장이 끝난 뒤 다음 page 또는 다음 position으로 이동합니다. runtime cap이나 API 예산에 걸리면 저장 대기 중인 page를 먼저 DB에 반영한 뒤 마지막으로 처리하려던 position/page를 저장하고 다음 실행에서 이어갑니다.
+discovery는 발견 상품 ID와 순위 기록을 최대 5개 list page까지 모아 한 번에 저장합니다. 이때 원본 list 응답 payload는 저장하지 않습니다. 재개 상태는 DB 저장이 끝난 뒤 다음 page 또는 다음 position으로 이동합니다. runtime cap이나 API 예산에 걸리면 저장 대기 중인 page를 먼저 DB에 반영한 뒤 마지막으로 처리하려던 position/page를 저장하고 다음 실행에서 이어갑니다.
 
 상세 수집 상태는 `detail-collection-state.json`에 저장합니다.
 

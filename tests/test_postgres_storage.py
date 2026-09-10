@@ -587,6 +587,8 @@ def test_init_schema_drops_legacy_snapshot_tables() -> None:
     assert "DROP TABLE IF EXISTS product_prices" in statements
     assert "DROP TABLE IF EXISTS product_inventory" in statements
     assert "DROP TABLE IF EXISTS product_shipping_fees" in statements
+    assert "ALTER TABLE product_search_ranks DROP COLUMN IF EXISTS payload" in statements
+    assert "ALTER TABLE product_discovery_targets DROP COLUMN IF EXISTS payload" in statements
 
 
 def test_save_product_snapshots_if_enabled_skips_when_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -686,6 +688,7 @@ def test_discovery_and_rank_rows_are_bulk_upserted() -> None:
     assert len(connection.executemany_calls) == 2
     assert all("ON CONFLICT" in call["statement"] for call in connection.executemany_calls)
     assert [len(call["params"]) for call in connection.executemany_calls] == [2, 2]
+    assert all("payload" not in call["statement"].lower() for call in connection.executemany_calls)
 
 
 def test_save_products_with_raw_samples_prunes_to_platform_retention(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -86,7 +86,7 @@ Indexes:
 
 ## `product_search_ranks`
 
-순위 의미가 있는 discovery/search 결과를 저장합니다. 검색어, 카테고리, 마켓, 정렬 조건별 특정 수집 시각의 상품 순위를 남깁니다.
+순위 의미가 있는 discovery/search 결과를 저장합니다. 검색어, 카테고리, 마켓, 정렬 조건별 특정 수집 시각의 상품 순위를 남깁니다. 원본 discovery/search record payload는 저장하지 않고 순위 분석에 필요한 필드만 컬럼으로 보관합니다.
 
 | 컬럼 | 타입 | Null | 설명 |
 | --- | --- | --- | --- |
@@ -102,7 +102,6 @@ Indexes:
 | `reason` | `TEXT` | Yes | 수집/발견 사유 |
 | `external_product_id` | `TEXT` | No | 플랫폼 원본 상품 ID |
 | `rank` | `INTEGER` | No | 검색/discovery 결과 순위 |
-| `payload` | `JSONB` | No | 순위 결과 원본 보조 payload. 기본값 `{}` |
 | `created_at` | `TIMESTAMPTZ` | No | row 생성 시각. 기본값 `now()` |
 
 Unique: `(platform, collected_at, keyword, category_code, market, sort, external_product_id, rank)`
@@ -113,7 +112,7 @@ Indexes:
 
 ## `product_discovery_targets`
 
-상세 수집 대상으로 사용할 상품 ID 목록을 저장합니다. discovery 단계에서 찾은 상품을 상세 수집 workflow가 다시 조회할 수 있게 남깁니다.
+상세 수집 대상으로 사용할 상품 ID 목록을 저장합니다. discovery 단계에서 찾은 상품을 상세 수집 workflow가 다시 조회할 수 있게 남깁니다. 원본 discovery record payload는 저장하지 않고 대상 식별과 발견 맥락에 필요한 필드만 컬럼으로 보관합니다.
 
 | 컬럼 | 타입 | Null | 설명 |
 | --- | --- | --- | --- |
@@ -128,7 +127,6 @@ Indexes:
 | `category_name` | `TEXT` | Yes | 발견 카테고리명 |
 | `market` | `TEXT` | Yes | 발견 마켓 구분 |
 | `reason` | `TEXT` | Yes | 발견/수집 사유 |
-| `payload` | `JSONB` | No | 발견 결과 원본 보조 payload. 기본값 `{}` |
 | `created_at` | `TIMESTAMPTZ` | No | row 생성 시각. 기본값 `now()` |
 | `updated_at` | `TIMESTAMPTZ` | No | 마지막 갱신 시각. 기본값 `now()` |
 
