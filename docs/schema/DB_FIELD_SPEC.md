@@ -21,7 +21,7 @@
 | `platform` | `TEXT` | No | 수집 플랫폼. 예: `coupang`, `ownerclan`, `domeggook` |
 | `external_product_id` | `TEXT` | No | 플랫폼 원본 상품 ID |
 | `product_name` | `TEXT` | Yes | 최신 상품명 |
-| `product_url` | `TEXT` | Yes | 최신 상품 URL |
+| `product_url` | `TEXT` | Yes | 최신 상품 URL. 원본 URL 필드가 없으면 플랫폼 상품 ID로 정규화 URL을 생성 |
 | `image_url` | `TEXT` | Yes | 최신 대표 이미지 URL |
 | `backup_image_url` | `TEXT` | Yes | 최신 예비 이미지 URL |
 | `source_specific` | `JSONB` | No | 플랫폼별 최신 보조/리스크/고시/정책 정보. 기본값 `{}` |

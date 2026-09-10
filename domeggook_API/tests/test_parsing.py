@@ -26,6 +26,7 @@ def test_optional_detail_fields_are_saved_as_none():
     assert failures == []
     assert products[0]["productId"] == "12345678"
     assert products[0]["productName"] == "상품 A"
+    assert products[0]["productUrl"] == "https://www.domeggook.com/12345678"
     assert products[0]["status"] is None
     assert products[0]["prices"]["domeCurrentSupplyPrice"] is None
     assert products[0]["seller"]["nickname"] is None
@@ -78,6 +79,7 @@ def test_real_detail_nested_shape_is_parsed():
     assert failures == []
     product = products[0]
     assert product["productId"] == "12345678"
+    assert product["productUrl"] == "https://www.domeggook.com/12345678"
     assert product["status"] == "판매중"
     assert product["prices"]["domeCurrentSupplyPrice"] == "1~9개: 2,000원 / 10개 이상: 1,800원"
     assert product["prices"]["supplyCurrentSupplyPrice"] == 1700
@@ -96,6 +98,24 @@ def test_real_detail_nested_shape_is_parsed():
     assert "images" not in product
     assert "keywords" not in product
     assert "image" not in product
+
+
+def test_explicit_domeggook_product_url_is_preserved() -> None:
+    payload = {
+        "domeggook": {
+            "item": [
+                {
+                    "no": "12345678",
+                    "url": "https://example.com/custom-domeggook-url",
+                }
+            ]
+        }
+    }
+
+    products, failures = parse_detail_products(payload, "2026-08-22T09:00:00+09:00")
+
+    assert failures == []
+    assert products[0]["productUrl"] == "https://example.com/custom-domeggook-url"
 
 
 def test_tiered_price_string_is_preserved_without_int_casting():

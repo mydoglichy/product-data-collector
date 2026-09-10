@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from typing import Any
+from urllib.parse import quote
 
 from numeric_utils import parse_number
 
@@ -45,6 +46,7 @@ def normalize_item(item: dict[str, Any], collected_at: str) -> dict[str, Any]:
         "status": normalize_status(source_status),
         "sourceStatus": source_status,
         "productName": item.get("name"),
+        "productUrl": product_url(product_key, item),
         "registeredAt": item.get("createdAt"),
         "updatedAt": item.get("updatedAt"),
         "prices": {
@@ -183,6 +185,18 @@ def normalize_status(value: str | None) -> str | None:
     if value is None:
         return None
     return STATUS_MAP.get(value, value)
+
+
+def product_url(product_key: str | None, item: dict[str, Any] | None = None) -> str | None:
+    source = item or {}
+    for key in ("productUrl", "productURL", "url", "link", "itemUrl", "itemURL"):
+        explicit_url = _string(source.get(key))
+        explicit_url = explicit_url.strip() if explicit_url is not None else None
+        if explicit_url:
+            return explicit_url
+    if not product_key:
+        return None
+    return f"https://www.ownerclan.com/V2/product/view.php?selfcode={quote(product_key, safe='')}"
 
 
 def _image_urls(*values: Any) -> list[str]:
