@@ -50,7 +50,7 @@ rate limit 계열 오류가 발생하면 실패로 끝내지 않고 지정 시�
 python -m domeggook_API.workflows.discover_products
 ```
 
-이 결과는 PostgreSQL `product_discovery_targets`에 저장됩니다. 서버의 일일 수집은 저장된 상품 ID 상세 수집을 먼저 수행합니다.
+이 결과는 PostgreSQL `product_discovery_targets`에 상품 ID와 발견 맥락 필드로 저장됩니다. 원본 discovery payload는 저장하지 않습니다. 서버의 일일 수집은 저장된 상품 ID 상세 수집을 먼저 수행합니다.
 
 ```powershell
 python scripts\run_daily_collector.py --platform domeggook
