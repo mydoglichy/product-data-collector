@@ -13,7 +13,7 @@
 | `products.status` | `basis.status` |
 | `products.image_url` | `thumb.original` 또는 첫 번째 이미지 URL |
 | `products.backup_image_url` | 두 번째 이미지 URL |
-| `products.source_specific` | `basis.section`, `basis.tax`, `seller.vacation`, `detail.safetyCert`, `detail.infoDuty`, `category.parents/current`, `popular`, `priceCompare`, `return.deliAmt`, `return.deliAmtDouble` 등 플랫폼 전용 보조 정보 |
+| `products.source_specific` | `basis.section`, `basis.tax`, `seller.vacation`, `detail.safetyCert`, `detail.infoDuty`, `category.parents/current`, `popular`, `priceCompare`, `benefits`, `dialog`, `event`, `selectOpt` 메타데이터, `return.deliAmt`, `return.deliAmtDouble` 등 플랫폼 전용 보조 정보 |
 
 ## 판매자
 
@@ -40,6 +40,7 @@
 | `prices.rows[].market='resale', price_type='minimum'` | `price.resale.minimum`, 문서 오탈자 alias `price.resale.minumum` |
 | `prices.rows[].market='resale', price_type='recommended'` | `price.resale.Recommand` |
 | `inventory.stockQuantity` | `qty.inventory` |
+| `inventory.options` | `selectOpt.data`의 옵션별 이름, 수량, 도매꾹/도매매/샘플 판매 여부와 추가금 |
 | `shipping.rows[].market='dome'` | `deli.dome.fee`, `deli.dome.tbl`, `deli.dome.type` |
 | `shipping.rows[].market='supply'` | `deli.supply.fee`, `deli.supply.tbl`, `deli.supply.type` |
 

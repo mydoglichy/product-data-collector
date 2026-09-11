@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from typing import Any
 from urllib.parse import quote
 
@@ -85,6 +86,9 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
     return_policy = _first_dict(item, ("return", "returnPolicy"))
     popular = _first_dict(item, ("popular",))
     price_compare = _first_dict(item, ("priceCompare",))
+    benefits = _first_dict(item, ("benefits",))
+    dialog = _first_dict(item, ("dialog",))
+    event = _first_dict(item, ("event",))
     channel = _first_dict(item, ("channel",))
     dome_fee_raw = _coalesce(_get(deli_dome, "fee", "tbl"), _get(dome, "deliveryFee", "shipFee"))
     supply_fee_raw = _coalesce(_get(deli_supply, "fee", "tbl"), _get(supply, "deliveryFee", "shipFee"))
@@ -165,6 +169,7 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
             "domeOnSale": _coalesce(_get(channel, "dome"), _get(dome, "onSale", "isSale", "enabled")),
             "supplyOnSale": _coalesce(_get(channel, "supply"), _get(supply, "onSale", "isSale", "enabled")),
         },
+        "options": _select_options(item.get("selectOpt")),
         "seller": {
             "id": _get(seller, "id", "sellerId", "userId"),
             "nickname": _get(seller, "nick", "nickname", "sellerNick"),
@@ -220,6 +225,10 @@ def parse_detail_product(item: dict[str, Any], collected_at: str, *, include_raw
             },
             "popular": popular,
             "priceCompare": price_compare,
+            "benefits": benefits,
+            "dialog": dialog,
+            "event": event,
+            "selectOption": _select_option_metadata(item.get("selectOpt")),
             "returnPolicy": {
                 "deliAmt": _number(_get(return_policy, "deliAmt")),
                 "deliAmtDouble": _get(return_policy, "deliAmtDouble"),
@@ -360,6 +369,104 @@ def _tax_invoice_risk(seller_type: Any) -> bool | None:
     if not isinstance(seller_type, str) or not seller_type.strip():
         return None
     return seller_type.strip() in {"간이과세자", "개인판매자"}
+
+
+def _select_options(value: Any) -> list[dict[str, Any]]:
+    payload = _select_option_payload(value)
+    if not payload:
+        return []
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return []
+    option_type = _text_or_none(payload.get("type")) or "option"
+    rows: list[dict[str, Any]] = []
+    for key, option in sorted(data.items(), key=lambda item: str(item[0])):
+        if not isinstance(option, dict):
+            continue
+        name = _text_or_none(option.get("name"))
+        row = {
+            "skuKey": _text_or_none(key) or _text_or_none(option.get("hash")),
+            "skuType": option_type,
+            "optionAttributes": _option_attributes(name, payload),
+            "name": name,
+            "price": _number_or_none(option.get("domPrice")),
+            "quantity": _number_or_none(option.get("qty")),
+            "domeOnSale": _flag_or_none(option.get("dom")),
+            "domePrice": _number_or_none(option.get("domPrice")),
+            "supplyOnSale": _flag_or_none(option.get("sup")),
+            "supplyPrice": _number_or_none(option.get("supPrice")),
+            "sampleOnSale": _flag_or_none(option.get("sam")),
+            "samplePrice": _number_or_none(option.get("samPrice")),
+            "hiddenStatus": _number_or_none(option.get("hid")),
+            "hash": _text_or_none(option.get("hash")),
+        }
+        rows.append({key: value for key, value in row.items() if value is not None and value != []})
+    return rows
+
+
+def _select_option_payload(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _select_option_metadata(value: Any) -> dict[str, Any]:
+    payload = _select_option_payload(value)
+    if not payload:
+        return {}
+    return {
+        key: payload[key]
+        for key in ("type", "optSort", "set", "orgSet")
+        if key in payload and payload[key] is not None
+    }
+
+
+def _option_attributes(name: str | None, payload: dict[str, Any]) -> list[dict[str, str]]:
+    if name is None:
+        return []
+    sets = payload.get("set")
+    if isinstance(sets, list) and len(sets) == 1 and isinstance(sets[0], dict):
+        label = _text_or_none(sets[0].get("name"))
+    else:
+        label = None
+    return [{"name": label or "option", "value": name}]
+
+
+def _text_or_none(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _number_or_none(value: Any) -> int | float | None:
+    parsed = _number(value)
+    if isinstance(parsed, bool) or parsed in (None, ""):
+        return None
+    return parsed if isinstance(parsed, (int, float)) else None
+
+
+def _flag_or_none(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if value == 1:
+            return True
+        if value == 0:
+            return False
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "y", "yes", "true", "on"}:
+            return True
+        if normalized in {"0", "n", "no", "false", "off"}:
+            return False
+    return None
 
 
 def _iter_image_urls(value: Any):

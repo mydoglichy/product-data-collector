@@ -1255,7 +1255,7 @@ def _snapshot_row(platform: str, collected_at: str, product: dict[str, Any]) -> 
         "seller": seller,
         "prices_payload": prices,
         "inventory_payload": inventory,
-        "options_payload": comparable.get("options") if isinstance(comparable.get("options"), list) else current.get("options", []),
+        "options_payload": current.get("options") if isinstance(current.get("options"), list) else comparable.get("options", []),
         "shipping_payload": shipping_payload,
         "primary_price": _decimal_or_none(_extract_primary_price(prices, current)),
         "price_rows": _price_rows(platform, prices, current),

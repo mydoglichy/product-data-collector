@@ -216,6 +216,10 @@ def test_detail_parser_preserves_source_specific_risk_fields():
                     },
                     "popular": {"code": "all", "name": "popular"},
                     "priceCompare": {"sole": True, "min": 1000},
+                    "benefits": {"sellerPoint": {"type": "none"}},
+                    "dialog": {"msg": [{"title": "해외직배송 안내", "content": "notice"}]},
+                    "event": {"packDeli": "false"},
+                    "selectOpt": {"type": "combination", "optSort": "DA", "set": [{"name": "색상"}]},
                     "return": {"deliAmt": "4,000", "deliAmtDouble": True},
                 }
             ]
@@ -243,6 +247,14 @@ def test_detail_parser_preserves_source_specific_risk_fields():
     assert source_specific["detail"]["infoDuty"]["type"] == "etc"
     assert source_specific["priceCompare"] == {"sole": True, "min": 1000}
     assert source_specific["popular"] == {"code": "all", "name": "popular"}
+    assert source_specific["benefits"] == {"sellerPoint": {"type": "none"}}
+    assert source_specific["dialog"] == {"msg": [{"title": "해외직배송 안내", "content": "notice"}]}
+    assert source_specific["event"] == {"packDeli": "false"}
+    assert source_specific["selectOption"] == {
+        "type": "combination",
+        "optSort": "DA",
+        "set": [{"name": "색상"}],
+    }
     assert source_specific["returnPolicy"] == {"deliAmt": 4000, "deliAmtDouble": True}
 
 
@@ -321,6 +333,66 @@ def test_detail_parser_preserves_shipping_fee_raw_values_and_deli_who():
     assert product["shipping"]["domeFeeRaw"] == "100+3000|100+3000"
     assert product["shipping"]["supplyFee"] == 3000
     assert product["shipping"]["supplyFeeRaw"] == "3,000"
+
+
+def test_detail_parser_maps_select_options_from_json_string():
+    payload = {
+        "domeggook": {
+            "item": [
+                {
+                    "no": "12345678",
+                    "selectOpt": (
+                        '{"type":"combination","set":[{"name":"색상","opts":["검정","흰색"],'
+                        '"domPrice":["0","500"],"changeKey":["00","01"]}],'
+                        '"data":{'
+                        '"00":{"name":"검정","dom":"1","domPrice":"0","sup":"0","supPrice":"0",'
+                        '"sam":"0","samPrice":"0","qty":"999","hid":"0","hash":"h0"},'
+                        '"01":{"name":"흰색","dom":"1","domPrice":"500","sup":"1","supPrice":"700",'
+                        '"sam":"0","samPrice":"0","qty":"12","hid":"2","hash":"h1"}'
+                        "}}"
+                    ),
+                }
+            ]
+        }
+    }
+
+    products, failures = parse_detail_products(payload, "2026-08-22T09:00:00+09:00")
+
+    assert failures == []
+    assert products[0]["options"] == [
+        {
+            "skuKey": "00",
+            "skuType": "combination",
+            "optionAttributes": [{"name": "색상", "value": "검정"}],
+            "name": "검정",
+            "price": 0,
+            "quantity": 999,
+            "domeOnSale": True,
+            "domePrice": 0,
+            "supplyOnSale": False,
+            "supplyPrice": 0,
+            "sampleOnSale": False,
+            "samplePrice": 0,
+            "hiddenStatus": 0,
+            "hash": "h0",
+        },
+        {
+            "skuKey": "01",
+            "skuType": "combination",
+            "optionAttributes": [{"name": "색상", "value": "흰색"}],
+            "name": "흰색",
+            "price": 500,
+            "quantity": 12,
+            "domeOnSale": True,
+            "domePrice": 500,
+            "supplyOnSale": True,
+            "supplyPrice": 700,
+            "sampleOnSale": False,
+            "samplePrice": 0,
+            "hiddenStatus": 2,
+            "hash": "h1",
+        },
+    ]
 
 
 def test_detail_parser_limits_raw_records():
