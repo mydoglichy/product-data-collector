@@ -328,6 +328,38 @@ def test_snapshot_row_splits_domeggook_market_prices_and_shipping() -> None:
     assert row["shipping_rows"][1]["shipping_fee_type_raw"] == "고정배송비"
 
 
+def test_snapshot_row_stores_domeggook_options_in_inventory_state() -> None:
+    row = _snapshot_row(
+        "domeggook",
+        "2026-08-30T10:00:00Z",
+        {
+            "productId": "option-product",
+            "inventory": {"stockQuantity": 10},
+            "options": [
+                {
+                    "skuKey": "00",
+                    "skuType": "combination",
+                    "optionAttributes": [{"name": "색상", "value": "검정"}],
+                    "quantity": 10,
+                    "domePrice": 0,
+                }
+            ],
+        },
+    )
+
+    assert row is not None
+    state = _history_state(row)
+    assert state["inventory"]["options"] == [
+        {
+            "skuKey": "00",
+            "skuType": "combination",
+            "optionAttributes": [{"name": "색상", "value": "검정"}],
+            "quantity": 10,
+            "domePrice": 0,
+        }
+    ]
+
+
 def test_snapshot_row_keeps_zero_shipping_distinct_from_missing_fee() -> None:
     free_row = _snapshot_row(
         "ownerclan",
