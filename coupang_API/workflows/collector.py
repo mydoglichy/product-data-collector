@@ -12,7 +12,7 @@ from ..config import CollectorConfig, load_config, load_credentials, load_keywor
 from ..services.models import parse_product_records
 from ..api.rate_limiter import RateLimiter
 from ..persistence.storage import dedupe_records
-from postgres_storage import MAX_RAW_SAMPLE_RETENTION, save_products_with_raw_samples_if_enabled
+from product_data_collector.persistence.postgres_storage import MAX_RAW_SAMPLE_RETENTION, save_products_with_raw_samples_if_enabled
 
 
 LOGGER = logging.getLogger("coupang_API")

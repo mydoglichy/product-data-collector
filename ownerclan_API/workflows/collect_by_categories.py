@@ -9,7 +9,7 @@ from pathlib import Path
 from threading import Event, Lock
 from typing import Any
 
-from postgres_storage import ProductSnapshotSaver, save_products_with_raw_samples_if_enabled
+from product_data_collector.persistence.postgres_storage import ProductSnapshotSaver, save_products_with_raw_samples_if_enabled
 
 from ..services.categories import load_or_refresh_leaf_categories
 from ..api.client import OwnerclanGraphQLError, OwnerclanHttpError

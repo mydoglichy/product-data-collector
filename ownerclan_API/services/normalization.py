@@ -4,7 +4,7 @@ import copy
 from typing import Any
 from urllib.parse import quote
 
-from numeric_utils import parse_number
+from product_data_collector.common.numeric_utils import parse_number
 
 
 STATUS_MAP = {

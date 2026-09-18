@@ -6,7 +6,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from postgres_storage import connect, init_schema, load_postgres_config, test_connection as check_postgres_connection
+from product_data_collector.persistence.postgres_storage import connect, init_schema, load_postgres_config, test_connection as check_postgres_connection
 
 __test__ = False
 

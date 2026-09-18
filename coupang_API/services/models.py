@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from numeric_utils import parse_number
+from product_data_collector.common.numeric_utils import parse_number
 
 
 @dataclass(frozen=True)

@@ -6,7 +6,7 @@ import json
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from numeric_utils import NUMERIC_TEXT_RE, parse_number
+from product_data_collector.common.numeric_utils import NUMERIC_TEXT_RE, parse_number
 
 
 MISSING = {"__value__": "__MISSING__"}

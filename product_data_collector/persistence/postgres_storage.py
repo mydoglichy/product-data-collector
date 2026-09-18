@@ -17,8 +17,8 @@ from psycopg import Connection
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from numeric_utils import parse_decimal
-from product_history import (
+from product_data_collector.common.numeric_utils import parse_decimal
+from product_data_collector.domain.product_history import (
     canonicalize,
     changed_leaf_paths,
     comparable_state,
@@ -26,7 +26,7 @@ from product_history import (
     flatten_paths,
     normalize_current_product,
 )
-from shipping_fees import parse_shipping_fee
+from product_data_collector.domain.shipping_fees import parse_shipping_fee
 
 
 TRUE_VALUES = {"1", "true", "yes", "y", "on"}

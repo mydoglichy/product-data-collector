@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from product_history import (
+from product_data_collector.domain.product_history import (
     changed_leaf_paths,
     comparable_state,
     external_product_id,

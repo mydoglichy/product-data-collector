@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from rate_limiter import WindowRateLimiter
+from product_data_collector.common.rate_limiter import WindowRateLimiter
 
 
 class RateLimiter(WindowRateLimiter):

@@ -13,7 +13,7 @@ from ..services.logging_config import configure_logging
 from ..services.parsing import parse_list_header, parse_list_items, parse_product_id
 from ..persistence.storage import clear_state, load_state, save_state
 from ..services.time_utils import now_iso
-from postgres_storage import (
+from product_data_collector.persistence.postgres_storage import (
     postgres_enabled,
     save_discovered_product_ids_if_enabled,
     save_discovery_targets_and_search_ranks_if_enabled,

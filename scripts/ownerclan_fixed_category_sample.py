@@ -18,7 +18,7 @@ from ownerclan_API.services.normalization import extract_connection_items, norma
 from ownerclan_API.services.time_utils import now_iso
 from ownerclan_API.workflows.collect_by_categories import make_client
 from ownerclan_API.api.client import OwnerclanGraphQLError
-from postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
+from product_data_collector.persistence.postgres_storage import save_product_raw_samples_if_enabled, save_product_snapshots_if_enabled
 
 
 DEFAULT_CATEGORY_FILE = Path("tests/tmp/ownerclan_fixed_categories.json")

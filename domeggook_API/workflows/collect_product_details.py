@@ -6,12 +6,12 @@ import sys
 import time
 from pathlib import Path
 
-from collection_state import item_list_hash, resume_index
+from product_data_collector.common.collection_state import item_list_hash, resume_index
 from ..api.client import DomeggookApiError, DomeggookClient, create_domeggook_client
 from ..config import DomeggookConfig, find_project_root, load_api_keys, load_config
 from ..services.logging_config import configure_logging
 from ..services.parsing import parse_detail_products
-from postgres_storage import discovered_product_ids, save_products_with_raw_samples_if_enabled
+from product_data_collector.persistence.postgres_storage import discovered_product_ids, save_products_with_raw_samples_if_enabled
 from .run_budget import RunBudget
 
 from ..persistence.storage import (

@@ -14,7 +14,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from domeggook_API.workflows.main import run as run_domeggook
 from ownerclan_API.workflows.main import run as run_ownerclan
-from postgres_storage import product_counts, postgres_enabled, test_connection
+from product_data_collector.persistence.postgres_storage import product_counts, postgres_enabled, test_connection
 
 LOGGER = logging.getLogger("collector.runner")
 MAX_LOG_BYTES = 1_000_000
