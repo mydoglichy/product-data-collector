@@ -7,7 +7,7 @@ from typing import Any
 
 import requests
 
-from collector_metrics import ApiMetrics
+from product_data_collector.common.collector_metrics import ApiMetrics
 from ..api.auth import JwtProvider
 from ..api.rate_limiter import RateLimiter
 

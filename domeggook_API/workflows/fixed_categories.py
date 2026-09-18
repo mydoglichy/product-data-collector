@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from postgres_storage import save_discovered_product_ids_if_enabled, save_search_ranks_if_enabled
+from product_data_collector.persistence.postgres_storage import save_discovered_product_ids_if_enabled, save_search_ranks_if_enabled
 
 from ..api.client import DomeggookApiError, DomeggookClient, ListRequest, create_domeggook_client
 from ..config import DomeggookConfig, find_project_root, load_api_keys, load_config

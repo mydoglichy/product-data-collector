@@ -7,9 +7,9 @@
 - `ownerclan_API/`: 오너클랜 상품 discovery, 카테고리 수집, 상세 수집, 증분 수집
 - `domeggook_API/`: 도매꾹/도매매 상품 discovery와 상세 수집
 - `coupang_API/`: 쿠팡 파트너스 키워드 검색 상품 수집
-- `postgres_storage.py`: 공통 PostgreSQL 스키마 생성, 보강, 저장 로직
-- `product_history.py`: 변경 감지 대상 필드 정규화 로직
-- `shipping_fees.py`: 배송비 정규화 로직
+- `product_data_collector/persistence/postgres_storage.py`: 공통 PostgreSQL 스키마 생성, 보강, 저장 로직
+- `product_data_collector/domain/product_history.py`: 변경 감지 대상 필드 정규화 로직
+- `product_data_collector/domain/shipping_fees.py`: 배송비 정규화 로직
 - `docs/schema/`: PostgreSQL 스키마와 저장 규칙
 - `docs/operations/`: 운영 절차와 재개 기준
 - `docs/experiments/`: API 제한, 변화율, 신규 API 검증 결과
@@ -81,5 +81,5 @@ python -m coupang_API --dry-run
 
 ```powershell
 pytest -q
-python -m compileall postgres_storage.py product_history.py
+python -m compileall product_data_collector
 ```

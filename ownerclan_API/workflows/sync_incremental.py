@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from postgres_storage import save_products_with_raw_samples_if_enabled
+from product_data_collector.persistence.postgres_storage import save_products_with_raw_samples_if_enabled
 
 from ..api.client import OwnerclanGraphQLError, OwnerclanHttpError
 from ..config import OwnerclanConfig, find_project_root, load_config

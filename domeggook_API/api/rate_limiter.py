@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from rate_limiter import RateLimitWindow, WindowRateLimiter
+from product_data_collector.common.rate_limiter import RateLimitWindow, WindowRateLimiter
 
 
 class RateLimiter(WindowRateLimiter):

@@ -11,7 +11,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from collector_metrics import ApiMetrics
+from product_data_collector.common.collector_metrics import ApiMetrics
 from ..config import DomeggookConfig
 from ..api.rate_limiter import RateLimitWindow, RateLimiter
 

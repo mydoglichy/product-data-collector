@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-import postgres_storage
-from postgres_storage import (
+from product_data_collector.persistence import postgres_storage
+from product_data_collector.persistence.postgres_storage import (
     _bulk_upsert_discovery_targets,
     _bulk_upsert_products,
     _bulk_upsert_search_ranks,

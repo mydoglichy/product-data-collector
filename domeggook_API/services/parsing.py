@@ -5,7 +5,7 @@ import json
 from typing import Any
 from urllib.parse import quote
 
-from numeric_utils import parse_number
+from product_data_collector.common.numeric_utils import parse_number
 
 
 def parse_list_items(payload: dict[str, Any]) -> list[dict[str, Any]]:

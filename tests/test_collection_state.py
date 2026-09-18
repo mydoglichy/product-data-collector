@@ -1,4 +1,4 @@
-from collection_state import item_list_hash, resume_index
+from product_data_collector.common.collection_state import item_list_hash, resume_index
 
 
 def test_resume_index_uses_next_index_when_list_hash_matches() -> None:

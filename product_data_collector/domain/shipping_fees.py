@@ -4,7 +4,7 @@ import re
 from decimal import Decimal
 from typing import Any
 
-from numeric_utils import parse_decimal
+from product_data_collector.common.numeric_utils import parse_decimal
 
 
 _PAIR_RE = re.compile(r"^\s*([0-9][0-9,]*)\s*\+\s*([0-9][0-9,]*)\s*$")
@@ -79,7 +79,10 @@ def parse_shipping_fee(
             result["shipping_type"] = "quantity_tiered"
             result["requires_quantity_calculation"] = True
             return result
-        rules = sorted(({"min_quantity": min_quantity, "fee": rule_fee} for min_quantity, rule_fee in pairs), key=lambda item: item["min_quantity"])
+        rules = sorted(
+            ({"min_quantity": min_quantity, "fee": rule_fee} for min_quantity, rule_fee in pairs),
+            key=lambda item: item["min_quantity"],
+        )
         result.update(
             {
                 "shipping_type": "quantity_tiered",
@@ -111,21 +114,22 @@ def parse_shipping_payment(value: Any) -> str:
     if value in (None, ""):
         return "unknown"
     text = str(value).strip()
+    compact = "".join(text.split())
     lowered = text.lower()
     upper = text.upper()
-    if upper == "S" or text == "무료배송":
+    if upper == "S" or compact == "\ubb34\ub8cc\ubc30\uc1a1":
         return "free"
     if lowered in {"free", "free_shipping", "freeshipping"}:
         return "free"
-    if upper == "P" or text == "선결제":
+    if upper == "P" or compact == "\uc120\uacb0\uc81c":
         return "prepaid"
     if lowered in {"inadvance", "prepaid", "advance", "paid"}:
         return "prepaid"
-    if upper == "B" or text == "착불":
+    if upper == "B" or compact == "\ucc29\ubd88":
         return "collect"
     if lowered in {"collect", "cash_on_delivery", "cod", "ondelivery"}:
         return "collect"
-    if upper == "C" or text == "구매자 선택":
+    if upper == "C" or compact == "\uad6c\ub9e4\uc790\uc120\ud0dd":
         return "buyer_choice"
     if lowered in {"buyer_choice", "buyerchoice"}:
         return "buyer_choice"
@@ -136,13 +140,13 @@ def _normalize_shipping_type(value: Any) -> str:
     if value in (None, ""):
         return "unknown"
     text = str(value).strip().lower()
-    if text in {"고정배송비", "fixed", "fixed_shipping", "fixedshipping"}:
+    if text in {"\uace0\uc815\ubc30\uc1a1\ube44", "fixed", "fixed_shipping", "fixedshipping"}:
         return "fixed"
-    if text in {"수량별비례", "quantity_proportional", "proportional", "quantity"}:
+    if text in {"\uc218\ub7c9\ubcc4\ube44\ub840", "quantity_proportional", "proportional", "quantity"}:
         return "quantity_proportional"
-    if text in {"수량별차등", "quantity_tiered", "tiered", "quantity_tier"}:
+    if text in {"\uc218\ub7c9\ubcc4\ucc28\ub4f1", "quantity_tiered", "tiered", "quantity_tier"}:
         return "quantity_tiered"
-    if text in {"무료배송", "free", "free_shipping", "freeshipping"}:
+    if text in {"\ubb34\ub8cc\ubc30\uc1a1", "free", "free_shipping", "freeshipping"}:
         return "free"
     return "unknown"
 
@@ -152,7 +156,7 @@ def _is_free_type(value: Any) -> bool:
 
 
 def _is_free_fee(value: Any) -> bool:
-    if isinstance(value, str) and value.strip() == "무료배송":
+    if isinstance(value, str) and value.strip() == "\ubb34\ub8cc\ubc30\uc1a1":
         return True
     numeric = _decimal_or_none(value)
     return numeric == Decimal("0")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from shipping_fees import parse_shipping_fee, parse_shipping_payment
+from product_data_collector.domain.shipping_fees import parse_shipping_fee, parse_shipping_payment
 
 
 @pytest.mark.parametrize(

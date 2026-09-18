@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 
-NUMERIC_TEXT_RE = re.compile(r"^[\s$원]*[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?[\s원]*$")
+NUMERIC_TEXT_RE = re.compile(r"^[\s$\u20a9]*[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?[\s$\u20a9\uc6d0]*$")
 
 
 def parse_number(value: Any) -> int | float | Any:
@@ -37,4 +37,4 @@ def normalize_numeric_text(value: Any) -> str | None:
     text = str(value).strip()
     if not NUMERIC_TEXT_RE.fullmatch(text):
         return None
-    return re.sub(r"[\s$원,]", "", text)
+    return re.sub(r"[\s$,\u20a9\uc6d0]", "", text)

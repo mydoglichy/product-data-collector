@@ -8,7 +8,7 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
-from postgres_storage import MAX_RAW_SAMPLE_RETENTION
+from product_data_collector.persistence.postgres_storage import MAX_RAW_SAMPLE_RETENTION
 
 MAX_REQUESTS_PER_MINUTE = 50
 DEFAULT_REQUESTS_PER_MINUTE = 40
