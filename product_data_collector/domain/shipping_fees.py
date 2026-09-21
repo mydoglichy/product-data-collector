@@ -129,7 +129,11 @@ def parse_shipping_payment(value: Any) -> str:
         return "collect"
     if lowered in {"collect", "cash_on_delivery", "cod", "ondelivery"}:
         return "collect"
-    if upper == "C" or compact == "\uad6c\ub9e4\uc790\uc120\ud0dd":
+    if (
+        upper == "C"
+        or compact == "\uad6c\ub9e4\uc790\uc120\ud0dd"
+        or (compact.startswith("\uad6c\ub9e4\uc790") and compact.endswith("\uc120\ud0dd"))
+    ):
         return "buyer_choice"
     if lowered in {"buyer_choice", "buyerchoice"}:
         return "buyer_choice"
