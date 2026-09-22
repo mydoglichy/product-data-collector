@@ -115,6 +115,7 @@ def test_unknown_shipping_fee(fee: object) -> None:
         ("C", "buyer_choice"),
         ("구매자 선택", "buyer_choice"),
         ("구매자(선불,착불)선택", "buyer_choice"),
+        ("구매자 ( 선불, 착불 ) 선택", "buyer_choice"),
     ),
 )
 def test_shipping_payment(value: str, expected: str) -> None:
