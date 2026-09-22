@@ -1,6 +1,6 @@
 # DB 스키마
 
-스키마 생성과 기존 DB 보강은 [postgres_storage.py](../../postgres_storage.py)의 `init_schema()`가 담당합니다. 현재 운영 DB의 public schema 기준 테이블은 다음 6개입니다.
+스키마 생성과 기존 DB 보강은 [postgres_storage.py](../../product_data_collector/persistence/postgres_storage.py)의 `init_schema()`가 담당합니다. 현재 운영 DB의 public schema 기준 테이블은 다음 6개입니다.
 
 - `products`: 상품 master 최신값
 - `product_history`: 가격, 재고, 배송, 판매 상태 변경 이력

@@ -8,6 +8,10 @@ from product_data_collector.common.numeric_utils import parse_decimal
 
 
 _PAIR_RE = re.compile(r"^\s*([0-9][0-9,]*)\s*\+\s*([0-9][0-9,]*)\s*$")
+_FREE_PAYMENT_ALIASES = {"free", "free_shipping", "freeshipping"}
+_PREPAID_PAYMENT_ALIASES = {"inadvance", "prepaid", "advance", "paid"}
+_COLLECT_PAYMENT_ALIASES = {"collect", "cash_on_delivery", "cod", "ondelivery"}
+_BUYER_CHOICE_PAYMENT_ALIASES = {"buyer_choice", "buyerchoice"}
 
 
 def parse_shipping_fee(
@@ -114,28 +118,24 @@ def parse_shipping_payment(value: Any) -> str:
     if value in (None, ""):
         return "unknown"
     text = str(value).strip()
-    compact = "".join(text.split())
+    compact = _compact_text(text)
     lowered = text.lower()
     upper = text.upper()
     if upper == "S" or compact == "\ubb34\ub8cc\ubc30\uc1a1":
         return "free"
-    if lowered in {"free", "free_shipping", "freeshipping"}:
+    if lowered in _FREE_PAYMENT_ALIASES:
         return "free"
     if upper == "P" or compact == "\uc120\uacb0\uc81c":
         return "prepaid"
-    if lowered in {"inadvance", "prepaid", "advance", "paid"}:
+    if lowered in _PREPAID_PAYMENT_ALIASES:
         return "prepaid"
     if upper == "B" or compact == "\ucc29\ubd88":
         return "collect"
-    if lowered in {"collect", "cash_on_delivery", "cod", "ondelivery"}:
+    if lowered in _COLLECT_PAYMENT_ALIASES:
         return "collect"
-    if (
-        upper == "C"
-        or compact == "\uad6c\ub9e4\uc790\uc120\ud0dd"
-        or (compact.startswith("\uad6c\ub9e4\uc790") and compact.endswith("\uc120\ud0dd"))
-    ):
+    if upper == "C" or _is_buyer_choice_payment(compact):
         return "buyer_choice"
-    if lowered in {"buyer_choice", "buyerchoice"}:
+    if lowered in _BUYER_CHOICE_PAYMENT_ALIASES:
         return "buyer_choice"
     return "unknown"
 
@@ -178,6 +178,16 @@ def _parse_pairs(value: Any) -> list[tuple[int, Decimal]]:
         fee = Decimal(match.group(2).replace(",", ""))
         pairs.append((quantity, fee))
     return pairs
+
+
+def _compact_text(value: str) -> str:
+    return "".join(value.split())
+
+
+def _is_buyer_choice_payment(compact: str) -> bool:
+    return compact == "\uad6c\ub9e4\uc790\uc120\ud0dd" or (
+        compact.startswith("\uad6c\ub9e4\uc790") and compact.endswith("\uc120\ud0dd")
+    )
 
 
 def _decimal_or_none(value: Any) -> Decimal | None:

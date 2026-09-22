@@ -26,6 +26,13 @@ python scripts\test_postgres_connection.py
 `.env`에는 PostgreSQL과 API 인증값을 설정합니다. 아래 값은 로컬 기본 예시입니다.
 
 ```dotenv
+COUPANG_ACCESS_KEY=your_coupang_access_key
+COUPANG_SECRET_KEY=your_coupang_secret_key
+DOMEGGOOK_API_KEY_1=your_domeggook_api_key_1
+OWNERCLAN_USERNAME=your_ownerclan_username
+OWNERCLAN_PASSWORD=your_ownerclan_password
+OWNERCLAN_ENV=production
+
 POSTGRES_ENABLED=true
 POSTGRES_HOST=127.0.0.1
 POSTGRES_PORT=5432
@@ -34,6 +41,8 @@ POSTGRES_USER=collector
 POSTGRES_PASSWORD=replace_with_local_password
 POSTGRES_PRODUCT_BATCH_SIZE=1000
 ```
+
+도매꾹 private API probe를 실행할 때만 `DOMEGGOOK_PrivateAPI_KEY_2`, `DOMEGGOOK_ID`, `DOMEGGOOK_PASSWORD`를 추가로 사용합니다.
 
 ## 일일 실행
 
